@@ -358,21 +358,25 @@ oval_device_t* oval_create_device(const oval_device_descriptor* device_descripto
 	return (oval_device_t*)device_cgpu;
 }
 
-HGEGraphics::Mesh* setupImGuiResourcesMesh(oval_cgpu_device_t* device, HGEGraphics::rendergraph_t& rg)
+HGEGraphics::Mesh* setupImGuiResourcesMesh(oval_cgpu_device_t* device, HGEGraphics::rendergraph_t& rg, ImDrawData* drawData)
 {
 	using namespace HGEGraphics;
 
-	ImDrawData* drawData = ImGui::GetDrawData();
 	if (drawData && drawData->TotalVtxCount > 0)
 	{
 		size_t vertex_size = drawData->TotalVtxCount * sizeof(ImDrawVert);
 		size_t index_size = drawData->TotalIdxCount * sizeof(ImDrawIdx);
 
+		struct PassData
+		{
+			ImDrawData* drawData;
+		};
+		PassData* update_vertex_passdata;
 		auto imgui_vertex_buffer = declare_dynamic_vertex_buffer(device->imgui_mesh, &rg, drawData->TotalVtxCount);
 		rendergraph_add_uploadbufferpass(&rg, "upload imgui vertex data", imgui_vertex_buffer, [](UploadEncoder* encoder, void* passdata)
 			{
-				ImDrawData* drawData = ImGui::GetDrawData();
-
+				PassData* resolved_passdata = (PassData*)passdata;
+				ImDrawData* drawData = resolved_passdata->drawData;
 				uint32_t offset = 0;
 				for (int n = 0; n < drawData->CmdListsCount; n++)
 				{
@@ -381,13 +385,15 @@ HGEGraphics::Mesh* setupImGuiResourcesMesh(oval_cgpu_device_t* device, HGEGraphi
 
 					offset += cmd_list->VtxBuffer.Size;
 				}
-			}, 0, nullptr);
+			}, sizeof(PassData), (void**)&update_vertex_passdata);
+		update_vertex_passdata->drawData = drawData;
 
+		PassData* update_index_passdata;
 		auto imgui_index_buffer = declare_dynamic_index_buffer(device->imgui_mesh, &rg, drawData->TotalIdxCount);
 		rendergraph_add_uploadbufferpass(&rg, "upload imgui index data", imgui_index_buffer, [](UploadEncoder* encoder, void* passdata)
 			{
-				ImDrawData* drawData = ImGui::GetDrawData();
-
+				PassData* resolved_passdata = (PassData*)passdata;
+				ImDrawData* drawData = resolved_passdata->drawData;
 				uint32_t offset = 0;
 				for (int n = 0; n < drawData->CmdListsCount; n++)
 				{
@@ -396,16 +402,16 @@ HGEGraphics::Mesh* setupImGuiResourcesMesh(oval_cgpu_device_t* device, HGEGraphi
 
 					offset += cmd_list->IdxBuffer.Size;
 				}
-			}, 0, nullptr);
+			}, sizeof(PassData), (void**)&update_index_passdata);
+		update_index_passdata->drawData = drawData;
 	}
 	return device->imgui_mesh;
 }
 
 HGEGraphics::Mesh* setupImGuiResources(oval_cgpu_device_t* device, HGEGraphics::rendergraph_t& rg)
 {
-	auto imgui_mesh = setupImGuiResourcesMesh(device, rg);
-	ImDrawData* drawData = ImGui::GetDrawData();
-	device->imgui_draw_data = (drawData && drawData->TotalVtxCount > 0) ? drawData : nullptr;
+	device->imgui_draw_data = device->snapshot.DrawData.TotalVtxCount > 0 ? &device->snapshot.DrawData : nullptr;
+	auto imgui_mesh = setupImGuiResourcesMesh(device, rg, device->imgui_draw_data);
 	return imgui_mesh;
 }
 
@@ -465,7 +471,7 @@ void renderImgui(oval_cgpu_device_t* device, HGEGraphics::rendergraph_t& rg, HGE
 	}
 }
 
-void render(oval_cgpu_device_t* device, HGEGraphics::Backbuffer* backbuffer)
+void render(oval_cgpu_device_t* device, const oval_submit_context& submit_context, HGEGraphics::Backbuffer* backbuffer)
 {
 	using namespace HGEGraphics;
 
@@ -478,8 +484,8 @@ void render(oval_cgpu_device_t* device, HGEGraphics::Backbuffer* backbuffer)
 
 	auto imgui_mesh = setupImGuiResources(device, rg);
 
-	if (device->super.descriptor.on_draw)
-		device->super.descriptor.on_draw(&device->super, rg, rg_back_buffer);
+	if (device->super.descriptor.on_submit)
+		device->super.descriptor.on_submit(&device->super, submit_context, rg, rg_back_buffer);
 	renderImgui(device, rg, rg_back_buffer);
 
 	rendergraph_present(&rg, rg_back_buffer);
@@ -566,96 +572,6 @@ bool on_resize(oval_cgpu_device_t* D)
 	return true;
 }
 
-void draw_frame(oval_cgpu_device_t* D, bool requestResize, double interpolation_time)
-{
-	bool rdc_capturing = false;
-	if (D->rdc && D->rdc_capture)
-	{
-		D->rdc->StartFrameCapture(nullptr, nullptr);
-		rdc_capturing = true;
-	}
-
-	auto& cur_frame_data = D->frameDatas[D->current_frame_index];
-	cgpu_wait_fences(1, &cur_frame_data.inflightFence);
-	cur_frame_data.newFrame();
-	D->info.reset();
-
-	CGPUAcquireNextDescriptor acquire_desc = {
-		.signal_semaphore = D->swapchain_prepared_semaphores[D->current_frame_index],
-	};
-
-	uint32_t acquired_swamchin_index;
-	auto res = cgpu_swap_chain_acquire_next_image(D->swapchain, &acquire_desc, &acquired_swamchin_index);
-
-	if (acquired_swamchin_index < D->swapchain->buffer_count)
-		D->info.current_swapchain_index = acquired_swamchin_index;
-	else
-		requestResize = true;
-
-	if (requestResize)
-	{
-		return;
-	}
-
-	ImGui_ImplSDL2_NewFrame();
-	ImGui::NewFrame();
-
-	interpolation_time = D->super.descriptor.render_need_interpolate ? interpolation_time : 0;
-	D->super.render_interpolation_time = interpolation_time;
-	D->super.render_interpolation_time_double = interpolation_time;
-
-	if (D->super.descriptor.on_imgui)
-		D->super.descriptor.on_imgui(&D->super);
-
-	ImGui::EndFrame();
-	ImGui::Render();
-
-	auto back_buffer = &D->backbuffer[D->info.current_swapchain_index];
-	auto prepared_semaphore = D->swapchain_prepared_semaphores[D->current_frame_index];
-
-	if (D->cur_transfer_queue)
-		oval_graphics_transfer_queue_submit(&D->super, D->cur_transfer_queue);
-	D->cur_transfer_queue = nullptr;
-	oval_process_load_queue(D);
-
-	render(D, back_buffer);
-
-	auto render_finished_semaphore = D->render_finished_semaphores[D->info.current_swapchain_index];
-	CGPUQueueSubmitDescriptor submit_desc = {
-		.cmd_count = (uint32_t)cur_frame_data.execContext.allocated_cmds.size(),
-		.p_cmds = cur_frame_data.execContext.allocated_cmds.data(),
-		.signal_fence = cur_frame_data.inflightFence,
-		.wait_semaphore_count = 1,
-		.p_wait_semaphores = &prepared_semaphore,
-		.signal_semaphore_count = 1,
-		.p_signal_semaphores = &render_finished_semaphore,
-	};
-	cgpu_queue_submit(D->gfx_queue, &submit_desc);
-
-	CGPUQueuePresentDescriptor present_desc = {
-		.swapchain = D->swapchain,
-		.wait_semaphore_count = 1,
-		.p_wait_semaphores = &render_finished_semaphore,
-		.index = (uint8_t)D->info.current_swapchain_index,
-	};
-	cgpu_queue_present(D->present_queue, &present_desc);
-
-	D->current_frame_index = (D->current_frame_index + 1) % D->frameDatas.size();
-
-	if (rdc_capturing)
-	{
-		D->rdc->EndFrameCapture(nullptr, nullptr);
-		D->rdc_capture = false;
-	}
-	if (D->rdc && D->rdc_capture)
-	{
-		if (!D->rdc->IsRemoteAccessConnected())
-		{
-			D->rdc->LaunchReplayUI(1, "");
-		}
-	}
-}
-
 void oval_runloop(oval_device_t* device)
 {
 	auto D = (oval_cgpu_device_t*)device;
@@ -667,7 +583,9 @@ void oval_runloop(oval_device_t* device)
 	D->current_frame_index = 0;
 	auto startTime = std::chrono::high_resolution_clock::now();
 	auto lastTime = startTime;
+	double time_since_startup = 0;
 	double lag = 0;
+	std::vector<tf::Taskflow> update_flows;
 
 	while (quit == false)
 	{
@@ -699,32 +617,157 @@ void oval_runloop(oval_device_t* device)
 		if (requestResize)
 			continue;
 
+		bool rdc_capturing = false;
+		if (D->rdc && D->rdc_capture)
+		{
+			D->rdc->StartFrameCapture(nullptr, nullptr);
+			rdc_capturing = true;
+		}
+
+		auto& cur_frame_data = D->frameDatas[D->current_frame_index];
+		cgpu_wait_fences(1, &cur_frame_data.inflightFence);
+		cur_frame_data.newFrame();
+		D->info.reset();
+
+		CGPUAcquireNextDescriptor acquire_desc = {
+			.signal_semaphore = D->swapchain_prepared_semaphores[D->current_frame_index],
+		};
+
+		uint32_t acquired_swamchin_index;
+		auto res = cgpu_swap_chain_acquire_next_image(D->swapchain, &acquire_desc, &acquired_swamchin_index);
+
+		if (acquired_swamchin_index < D->swapchain->buffer_count)
+			D->info.current_swapchain_index = acquired_swamchin_index;
+		else
+			requestResize = true;
+
+		if (requestResize)
+		{
+			continue;
+		}
+
+		ImDrawData* drawData = ImGui::GetDrawData();
+		if (drawData)
+			D->snapshot.SnapUsingSwap(drawData, ImGui::GetTime());
+
+		ImGui_ImplSDL2_NewFrame();
+		ImGui::NewFrame();
+
 		auto currentTime = std::chrono::high_resolution_clock::now();
-		auto timeSinceStartup = std::chrono::duration_cast<std::chrono::duration<double>>(currentTime - startTime).count();
 		auto elapsedTime = std::chrono::duration_cast<std::chrono::duration<double>>(currentTime - lastTime).count();
 		lag += elapsedTime;
 
-		auto time_since_startup_double = D->super.time_since_startup_double;
-
 		lastTime = currentTime;
+
+		tf::Taskflow flow;
+		tf::Task last_update_flow = flow.placeholder();
 
 		double fixed_update_time_step = D->super.descriptor.fixed_update_time_step;
 		while (lag >= fixed_update_time_step)
 		{
-			D->super.delta_time = fixed_update_time_step;
-			D->super.delta_time_double = fixed_update_time_step;
-			D->super.time_since_startup_double += fixed_update_time_step;
-			D->super.time_since_startup = D->super.time_since_startup_double;
+			time_since_startup += fixed_update_time_step;
+			oval_update_context update_context
+			{
+				.delta_time = (float)fixed_update_time_step,
+				.time_since_startup = (float)time_since_startup,
+				.delta_time_double = fixed_update_time_step,
+				.time_since_startup_double = time_since_startup,
+			};
 
 			if (D->super.descriptor.on_update)
-				D->super.descriptor.on_update(&D->super);
+			{
+				update_flows.push_back(D->super.descriptor.on_update(&D->super, update_context));
+				auto update_task = flow.composed_of(update_flows.back()).name("update");
+				update_task.succeed(last_update_flow);
+				last_update_flow = update_task;
+			}
 			lag -= fixed_update_time_step;
 		}
 
-		//D->super.time_since_startup_double = time_since_startup_double + elapsedTime;
-		//D->super.time_since_startup = D->super.time_since_startup_double;
+		double interpolation_time = D->super.descriptor.render_need_interpolate ? lag : 0;
 
-		draw_frame(D, requestResize, lag);
+		oval_render_context render_context
+		{
+			.delta_time = (float)fixed_update_time_step,
+			.time_since_startup = (float)time_since_startup,
+			.render_interpolation_time = (float)interpolation_time,
+			.delta_time_double = fixed_update_time_step,
+			.time_since_startup_double = time_since_startup,
+			.render_interpolation_time_double = interpolation_time,
+			.currentRenderPacketFrame = D->currentPacketFrame,
+		};
+
+		auto renderTask = flow.emplace([D, render_context]()
+			{
+				if (D->super.descriptor.on_render)
+					D->super.descriptor.on_render(&D->super, render_context);
+			}).name("render");
+
+		auto imguiTask = flow.emplace([D, render_context]
+			{
+				if (D->super.descriptor.on_imgui)
+					D->super.descriptor.on_imgui(&D->super, render_context);
+				ImGui::EndFrame();
+				ImGui::Render();
+			}).name("imgui");
+
+		oval_submit_context submit_context
+		{
+			.submitRenderPacketFrame = (D->currentPacketFrame + 1) % 2,
+		};
+		auto submitTask = flow.emplace([D, &cur_frame_data, submit_context]
+			{
+				auto back_buffer = &D->backbuffer[D->info.current_swapchain_index];
+				auto prepared_semaphore = D->swapchain_prepared_semaphores[D->current_frame_index];
+
+				if (D->cur_transfer_queue)
+					oval_graphics_transfer_queue_submit(&D->super, D->cur_transfer_queue);
+				D->cur_transfer_queue = nullptr;
+				oval_process_load_queue(D);
+
+				render(D, submit_context, back_buffer);
+
+				auto render_finished_semaphore = D->render_finished_semaphores[D->info.current_swapchain_index];
+				CGPUQueueSubmitDescriptor submit_desc = {
+					.cmd_count = (uint32_t)cur_frame_data.execContext.allocated_cmds.size(),
+					.p_cmds = cur_frame_data.execContext.allocated_cmds.data(),
+					.signal_fence = cur_frame_data.inflightFence,
+					.wait_semaphore_count = 1,
+					.p_wait_semaphores = &prepared_semaphore,
+					.signal_semaphore_count = 1,
+					.p_signal_semaphores = &render_finished_semaphore,
+				};
+				cgpu_queue_submit(D->gfx_queue, &submit_desc);
+
+				CGPUQueuePresentDescriptor present_desc = {
+					.swapchain = D->swapchain,
+					.wait_semaphore_count = 1,
+					.p_wait_semaphores = &render_finished_semaphore,
+					.index = (uint8_t)D->info.current_swapchain_index,
+				};
+				cgpu_queue_present(D->present_queue, &present_desc);
+			}).name("submit");
+
+		renderTask.succeed(last_update_flow);
+		imguiTask.succeed(renderTask);
+		D->taskExecutor.run(flow).wait();
+		update_flows.clear();
+
+		D->current_frame_index = (D->current_frame_index + 1) % D->frameDatas.size();
+		D->currentPacketFrame = (D->currentPacketFrame + 1) % 2;
+
+		if (rdc_capturing)
+		{
+			D->rdc->EndFrameCapture(nullptr, nullptr);
+			D->rdc_capture = false;
+		}
+		if (D->rdc && D->rdc_capture)
+		{
+			if (!D->rdc->IsRemoteAccessConnected())
+			{
+				D->rdc->LaunchReplayUI(1, "");
+			}
+		}
 	}
 
 	cgpu_queue_wait_idle(D->gfx_queue);
@@ -816,11 +859,6 @@ void oval_free_device(oval_device_t* device)
 	D->window = CGPU_NULLPTR;
 
 	SDL_Quit();
-
-	D->super.delta_time = 0;
-	D->super.delta_time_double = 0;
-	D->super.time_since_startup = 0;
-	D->super.time_since_startup_double = 0;
 
 	delete D;
 

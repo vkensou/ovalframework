@@ -53,6 +53,7 @@ target("rgframework")
     set_pcheader("src/rgframework/src/pcheader.h")
     add_includedirs("src/rgframework/include", {public = true})
     add_headerfiles("src/rgframework/include/*.h")
+    add_headerfiles("src/rgframework/src/*.h", {install = false})
     add_files("src/rgframework/src/*.cpp")
     add_files("src/rgframework/src/*.hlsl")
     if is_plat("windows") then 

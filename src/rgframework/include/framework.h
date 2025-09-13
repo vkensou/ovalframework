@@ -4,10 +4,36 @@
 #include "rendergraph.h"
 #include "drawer.h"
 #include "HandmadeMath.h"
+#include <taskflow/taskflow.hpp>
 
-typedef void (*oval_on_draw)(struct oval_device_t* device, HGEGraphics::rendergraph_t& rg, HGEGraphics::texture_handle_t rg_back_buffer);
-typedef void (*oval_on_update)(struct oval_device_t* device);
-typedef void (*oval_on_imgui)(struct oval_device_t* device);
+typedef struct oval_update_context
+{
+    float delta_time;
+    float time_since_startup;
+    double delta_time_double;
+    double time_since_startup_double;
+} oval_update_context;
+
+typedef struct oval_render_context
+{
+    float delta_time;
+    float time_since_startup;
+    float render_interpolation_time;
+    double delta_time_double;
+    double time_since_startup_double;
+    double render_interpolation_time_double;
+    size_t currentRenderPacketFrame;
+} oval_render_context;
+
+typedef struct oval_submit_context
+{
+    size_t submitRenderPacketFrame;
+} oval_submit_context;
+
+typedef void (*oval_on_submit)(struct oval_device_t* device, oval_submit_context submit_context, HGEGraphics::rendergraph_t& rg, HGEGraphics::texture_handle_t rg_back_buffer);
+typedef tf::Taskflow(*oval_on_update)(struct oval_device_t* device, oval_update_context update_context);
+typedef void (*oval_on_imgui)(struct oval_device_t* device, oval_render_context render_context);
+typedef void (*oval_on_render)(struct oval_device_t* device, oval_render_context render_context);
 
 typedef enum update_frequency_mode_e
 {
@@ -27,8 +53,9 @@ typedef struct oval_device_descriptor
 {
     void* userdata;
     oval_on_update on_update;
+    oval_on_render on_render;
     oval_on_imgui on_imgui;
-    oval_on_draw on_draw;
+    oval_on_submit on_submit;
     uint16_t width;
     uint16_t height;
     update_frequency_mode_e update_frequecy_mode;
@@ -44,12 +71,6 @@ typedef struct oval_device_descriptor
 
 typedef struct oval_device_t {
     const oval_device_descriptor descriptor;
-    float delta_time;
-    float time_since_startup;
-    double delta_time_double;
-    double time_since_startup_double;
-    float render_interpolation_time;
-    double render_interpolation_time_double;
     uint16_t width;
     uint16_t height;
 } oval_device_t;

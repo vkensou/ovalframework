@@ -281,8 +281,6 @@ struct Application
 	std::vector<Material> materials;
 	std::pmr::synchronized_pool_resource root_memory_resource;
 	std::array<FrameRenderPacket, 2> frameRenderPackets;
-	size_t currentPackFrame{ 0 };
-	tf::Executor taskExecutor{ (size_t)std::max((int)std::thread::hardware_concurrency() - 2, 1) };
 
 	Application()
 		: frameRenderPackets{ FrameRenderPacket{&root_memory_resource}, FrameRenderPacket{&root_memory_resource} }
@@ -452,10 +450,32 @@ tf::Task createForeachTask(const SystemContext& context, entt::registry& registr
 		});
 }
 
-tf::Task simulate(Application& app, tf::Taskflow& flow)
+template<typename...T, typename Func>
+void updateSystem(const SystemContext& context, entt::registry& registry, Func&& func)
+{
+	auto view = registry.view<T...>();
+	for (auto entity : view)
+	{
+		auto args = std::tuple_cat(std::forward_as_tuple(context), view.get(entity));
+		std::apply(std::forward<Func>(func), std::move(args));
+	}
+}
+
+template<typename...T, typename...Exclude, typename Func>
+void updateSystem(const SystemContext& context, entt::registry& registry, Func&& func, entt::exclude_t<Exclude...> exclude)
+{
+	auto view = registry.view<T...>(exclude);
+	for (auto entity : view)
+	{
+		auto args = std::tuple_cat(std::forward_as_tuple(context), view.get(entity));
+		std::apply(std::forward<Func>(func), std::move(args));
+	}
+}
+
+tf::Task simulate(Application& app, const oval_update_context& update_context, tf::Taskflow& flow)
 {
 	auto& registry = app.registry;
-	SystemContext context = SystemContext{ app.device->delta_time, app.device->time_since_startup, app.device->delta_time_double, app.device->time_since_startup_double, 0, 0 };
+	SystemContext context = SystemContext{ update_context.delta_time, update_context.time_since_startup, update_context.delta_time_double, update_context.time_since_startup_double, 0, 0 };
 	auto simpleHarmonicMoveSystem = createForeachTask<const SimpleHarmonic, Position>(context, registry, flow, doSimpleHarmonicMove).name("简谐运动");
 	auto rotationSystem = createForeachTask<const Rotate, Rotation>(context, registry, flow, doRotation).name("旋转运动");
 	auto updateMatrixPositionOnlySystem = createForeachTask<const Position, Matrix>(context, registry, flow, updateMatrixPositionOnly, entt::exclude<Rotation>).name("更新矩阵PositionOnly");
@@ -509,33 +529,21 @@ std::pmr::vector<RenderObject> extract(Application& app, std::pmr::vector<entt::
 	return renderObjects;
 }
 
-tf::Task interpolate(Application& app, tf::Taskflow& flow)
+void interpolate(Application& app, const oval_render_context& render_context)
 {
 	auto& registry = app.registry;
-	SystemContext context = SystemContext{ app.device->delta_time, app.device->time_since_startup, app.device->delta_time_double, app.device->time_since_startup_double, app.device->render_interpolation_time, app.device->render_interpolation_time_double };
-	auto simpleHarmonicMoveSystem = createForeachTask<const SimpleHarmonic, MoveInterpolation>(context, registry, flow, updateMoveInterpolation).name("简谐运动");
-	auto rotationSystem = createForeachTask<const Rotate, RotateInterpolation>(context, registry, flow, updateRotateInterpolation).name("旋转运动");
-	auto updateMatrixStaticSystem = createForeachTask<const Matrix, ShowMatrix>(context, registry, flow, updateShowMatrixStatic, entt::exclude<MoveInterpolation, RotateInterpolation>).name("更新矩阵Static");
-	auto updateMatrixPositionOnlySystem = createForeachTask<const Matrix, const MoveInterpolation, ShowMatrix>(context, registry, flow, updateShowMatrixMoveOnly, entt::exclude<RotateInterpolation>).name("更新矩阵PositionOnly");
-	auto updateMatrixRotationOnlySystem = createForeachTask<const Matrix, const RotateInterpolation, ShowMatrix>(context, registry, flow, updateShowMatrixRotateOnly, entt::exclude<MoveInterpolation>).name("更新矩阵RotationOnly");
-	auto updateMatrixPositionAndRotationSystem = createForeachTask<const Matrix, const MoveInterpolation, const RotateInterpolation, ShowMatrix>(context, registry, flow, updateShowMatrixMoveAndRotate).name("更新矩阵PositionAndRotation");
-
-	auto beforeUpdateMatrix = flow.placeholder();
-	beforeUpdateMatrix
-		.succeed(simpleHarmonicMoveSystem, rotationSystem)
-		.precede(updateMatrixPositionOnlySystem, updateMatrixRotationOnlySystem, updateMatrixPositionAndRotationSystem);
-
-	auto endOfSimulate = flow.placeholder();
-	endOfSimulate.succeed(updateMatrixPositionOnlySystem, updateMatrixRotationOnlySystem, updateMatrixPositionAndRotationSystem);
-
-	return endOfSimulate;
-
+	SystemContext context = SystemContext{ render_context.delta_time, render_context.time_since_startup, render_context.delta_time_double, render_context.time_since_startup_double, render_context.render_interpolation_time, render_context.render_interpolation_time_double };
+	updateSystem<const SimpleHarmonic, MoveInterpolation>(context, registry, updateMoveInterpolation);
+	updateSystem<const Rotate, RotateInterpolation>(context, registry, updateRotateInterpolation);
+	updateSystem<const Matrix, ShowMatrix>(context, registry, updateShowMatrixStatic, entt::exclude<MoveInterpolation, RotateInterpolation>);
+	updateSystem<const Matrix, const MoveInterpolation, ShowMatrix>(context, registry, updateShowMatrixMoveOnly, entt::exclude<RotateInterpolation>);
+	updateSystem<const Matrix, const RotateInterpolation, ShowMatrix>(context, registry, updateShowMatrixRotateOnly, entt::exclude<MoveInterpolation>);
+	updateSystem<const Matrix, const MoveInterpolation, const RotateInterpolation, ShowMatrix>(context, registry, updateShowMatrixMoveAndRotate);
 }
 
-void enumViews(Application& app)
+void enumViews(Application& app, FrameRenderPacket& currentFramePack)
 {
 	auto& registry = app.registry;
-	auto& currentFramePack = app.frameRenderPackets[app.currentPackFrame];
 
 	auto lightDir = HMM_Norm(HMM_V3(0, -1, 0));
 
@@ -575,10 +583,8 @@ void enumViews(Application& app)
 	}
 }
 
-void prepare(Application& app)
+void prepare(Application& app, FrameRenderPacket& lastFrameRenderPacket)
 {
-	auto& lastFrameRenderPacket = app.frameRenderPackets[app.currentPackFrame];
-
 	for (auto& view : lastFrameRenderPacket.viewDatas)
 	{
 		std::sort(view.renderObjects.begin(), view.renderObjects.end(), [](const RenderObject& a, const RenderObject& b)
@@ -654,23 +660,31 @@ void submit(Application& app, FrameRenderPacket& lastFrameRenderPacket, oval_dev
 	}
 }
 
-void on_update(oval_device_t* device)
+tf::Taskflow on_update(oval_device_t* device, oval_update_context update_context)
 {
 	Application& app = *(Application*)device->descriptor.userdata;
-	app.currentPackFrame = (app.currentPackFrame + 1) % 2;
 
 	tf::Taskflow flow;
-	auto simulateTask = simulate(app, flow);
+	auto simulateTask = simulate(app, update_context, flow);
 
-	app.taskExecutor.run(flow).wait();
+	return flow;
 }
 
-void on_imgui(oval_device_t* device)
+void on_render(oval_device_t* device, oval_render_context render_context)
+{
+	Application* app = (Application*)device->descriptor.userdata;
+	auto& cuurentFrameRenderPacket = app->frameRenderPackets[render_context.currentRenderPacketFrame];
+	interpolate(*app, render_context);
+	enumViews(*app, cuurentFrameRenderPacket);
+	prepare(*app, cuurentFrameRenderPacket);
+}
+
+void on_imgui(oval_device_t* device, oval_render_context render_context)
 {
 	ImGui::Text("Hello, ImGui!");
 	if (ImGui::Button("Capture"))
 		oval_render_debug_capture(device);
-
+	
 	uint32_t length;
 	const char** names;
 	const float* durations;
@@ -688,21 +702,10 @@ void on_imgui(oval_device_t* device)
 	}
 }
 
-void on_draw(oval_device_t* device, HGEGraphics::rendergraph_t& rg, HGEGraphics::texture_handle_t rg_back_buffer)
+void on_submit(oval_device_t* device, oval_submit_context submit_context, HGEGraphics::rendergraph_t& rg, HGEGraphics::texture_handle_t rg_back_buffer)
 {
 	Application* app = (Application*)device->descriptor.userdata;
-	//printf("draw:%lf\n", device->time_since_startup_double + device->render_interpolation_time_double);
-
-	tf::Taskflow flow;
-
-	auto simulateTask = interpolate(*app, flow);
-
-	app->taskExecutor.run(flow).wait();
-
-	enumViews(*app);
-	prepare(*app);
-
-	auto& lastFrameRenderPacket = app->frameRenderPackets[app->currentPackFrame];
+	auto& lastFrameRenderPacket = app->frameRenderPackets[submit_context.submitRenderPacketFrame];
 	submit(*app, lastFrameRenderPacket, device, rg, rg_back_buffer);
 }
 
@@ -716,8 +719,9 @@ int SDL_main(int argc, char *argv[])
 	{
 		.userdata = &app,
 		.on_update = on_update,
+		.on_render = on_render,
 		.on_imgui = on_imgui,
-		.on_draw = on_draw,
+		.on_submit = on_submit,
 		.width = width,
 		.height = height,
 		.fixed_update_time_step = 1.0 / 1,

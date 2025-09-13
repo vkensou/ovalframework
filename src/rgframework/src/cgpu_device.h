@@ -6,6 +6,8 @@
 #include "renderdoc_helper.h"
 #include <queue>
 #include "renderer.h"
+#include <taskflow/taskflow.hpp>
+#include "imgui_threaded_rendering.h"
 
 struct oval_transfer_data_to_texture
 {
@@ -135,7 +137,9 @@ typedef struct oval_cgpu_device_t {
 	CGPUSamplerId imgui_font_sampler = CGPU_NULLPTR;
 	HGEGraphics::Mesh* imgui_mesh = nullptr;
 
+	ImDrawDataSnapshot snapshot;
 	ImDrawData* imgui_draw_data = nullptr;
+	size_t currentPacketFrame{ 0 };
 
 	bool rdc_capture = false;
 	RENDERDOC_API_1_0_0* rdc = nullptr;
@@ -145,6 +149,8 @@ typedef struct oval_cgpu_device_t {
 	oval_graphics_transfer_queue* cur_transfer_queue = nullptr;
 
 	HGEGraphics::Texture* default_texture;
+
+	tf::Executor taskExecutor{ (size_t)std::max((int)std::thread::hardware_concurrency() - 2, 1) };
 } oval_cgpu_device_t;
 
 void oval_process_load_queue(oval_cgpu_device_t* device);
