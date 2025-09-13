@@ -1,0 +1,4 @@
+[submodule "cgpu"]
+	path = cgpu
+	url = https://github.com/vkensou/cgpu.git
+	branch = master
