@@ -1,3 +1,5 @@
+mkdir "examples\assets\shaderbin"
+
 .\tools\slang\slangc shaders\hello.hlsl -profile sm_5_0 -capability SPIRV_1_3 -entry vert -o shaders\hello.vert.spv -O3 -emit-spirv-directly
 .\tools\slang\slangc shaders\hello.hlsl -profile sm_5_0 -capability SPIRV_1_3 -entry frag -o shaders\hello.frag.spv -O3 -emit-spirv-directly
 
@@ -22,3 +24,6 @@
 .\tools\slang\slangc examples\computeparticle\particle.slang -profile sm_5_0 -capability SPIRV_1_3 -entry vert -o examples\assets\shaderbin\particle.vert.spv -O3 -emit-spirv-directly -matrix-layout-row-major -I examples\shaderlibrary
 .\tools\slang\slangc examples\computeparticle\particle.slang -profile sm_5_0 -capability SPIRV_1_3 -entry frag -o examples\assets\shaderbin\particle.frag.spv -O3 -emit-spirv-directly -matrix-layout-row-major -I examples\shaderlibrary
 .\tools\slang\slangc examples\computeparticle\particle_update.slang -profile sm_5_0 -capability SPIRV_1_3 -entry comp -o examples\assets\shaderbin\particle_update.comp.spv -O3 -emit-spirv-directly -matrix-layout-row-major -I examples\shaderlibrary
+
+.\tools\slang\slangc examples\rendersystem\obj2.slang -profile sm_5_0 -capability SPIRV_1_3 -entry vert -o examples\assets\shaderbin\obj2.vert.spv -O3 -emit-spirv-directly -matrix-layout-row-major
+.\tools\slang\slangc examples\rendersystem\obj2.slang -profile sm_5_0 -capability SPIRV_1_3 -entry frag -o examples\assets\shaderbin\obj2.frag.spv -O3 -emit-spirv-directly -matrix-layout-row-major
