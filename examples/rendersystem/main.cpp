@@ -682,6 +682,7 @@ void on_render(oval_device_t* device, oval_render_context render_context)
 void on_imgui(oval_device_t* device, oval_render_context render_context)
 {
 	ImGui::Text("Hello, ImGui!");
+	ImGui::Text("%d", render_context.fps);
 	if (ImGui::Button("Capture"))
 		oval_render_debug_capture(device);
 	

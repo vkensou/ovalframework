@@ -585,6 +585,9 @@ void oval_runloop(oval_device_t* device)
 	auto lastTime = startTime;
 	double time_since_startup = 0;
 	double lag = 0;
+	auto lastCountFPSTime = startTime;
+	int countFrame = 0;
+	int lastFPS = 0;
 	std::vector<tf::Taskflow> update_flows;
 
 	while (quit == false)
@@ -655,7 +658,17 @@ void oval_runloop(oval_device_t* device)
 
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		auto elapsedTime = std::chrono::duration_cast<std::chrono::duration<double>>(currentTime - lastTime).count();
+		auto elapsedFPSTime = std::chrono::duration_cast<std::chrono::duration<double>>(currentTime - lastCountFPSTime).count();
 		lag += elapsedTime;
+
+		if (elapsedFPSTime < 1)
+			countFrame++;
+		else
+		{
+			lastFPS = countFrame;
+			countFrame = 0;
+			lastCountFPSTime = currentTime;
+		}
 
 		lastTime = currentTime;
 
@@ -672,6 +685,7 @@ void oval_runloop(oval_device_t* device)
 				.time_since_startup = (float)time_since_startup,
 				.delta_time_double = fixed_update_time_step,
 				.time_since_startup_double = time_since_startup,
+				.fps = lastFPS,
 			};
 
 			if (D->super.descriptor.on_update)
@@ -695,6 +709,7 @@ void oval_runloop(oval_device_t* device)
 			.time_since_startup_double = time_since_startup,
 			.render_interpolation_time_double = interpolation_time,
 			.currentRenderPacketFrame = D->currentPacketFrame,
+			.fps = lastFPS,
 		};
 
 		auto renderTask = flow.emplace([D, render_context]()

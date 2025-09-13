@@ -12,6 +12,7 @@ typedef struct oval_update_context
     float time_since_startup;
     double delta_time_double;
     double time_since_startup_double;
+    int fps;
 } oval_update_context;
 
 typedef struct oval_render_context
@@ -23,6 +24,7 @@ typedef struct oval_render_context
     double time_since_startup_double;
     double render_interpolation_time_double;
     size_t currentRenderPacketFrame;
+    int fps;
 } oval_render_context;
 
 typedef struct oval_submit_context
