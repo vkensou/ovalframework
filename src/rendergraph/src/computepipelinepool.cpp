@@ -11,18 +11,15 @@ namespace HGEGraphics
 
 	ComputePipeline* ComputePipelinePool::getComputePipeline(ComputeShader* shader)
 	{
-		auto key = CPSOKey
-		{
-			.shader = shader,
-		};
+		auto key = shader;
 		return getResource(key);
 	}
 
 	ComputePipeline* ComputePipelinePool::getResource_impl(const CPSOKey& key)
 	{
 		CGPUComputePipelineDescriptor cp_desc = {
-			.root_signature = key.shader->root_sig,
-			.compute_shader = &key.shader->cs,
+			.root_signature = key->root_sig,
+			.compute_shader = &key->cs,
 		};
 		auto handle = cgpu_device_create_compute_pipeline(device, &cp_desc);
 

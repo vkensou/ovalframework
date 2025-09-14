@@ -20,7 +20,15 @@ namespace HGEGraphics
 	struct TextureDescriptorHasher
 	{
 		size_t operator()(const TextureDescriptor& xyz) const {
-			return MurmurHashFn<TextureDescriptor>()(xyz);
+			size_t seed = 0;
+
+			hash_combine(seed, xyz.width);
+			hash_combine(seed, xyz.height);
+			hash_combine(seed, xyz.depth);
+			hash_combine(seed, xyz.mipLevels);
+			hash_combine(seed, xyz.format);
+
+			return seed;
 		}
 	};
 

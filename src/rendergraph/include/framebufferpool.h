@@ -3,6 +3,7 @@
 #include "cgpu/api.h"
 #include "resourcepool.h"
 #include "hash.h"
+#include "compare.h"
 
 namespace HGEGraphics
 {
@@ -16,24 +17,8 @@ namespace HGEGraphics
 		CGPUFramebufferDescriptor _descriptor;
 	};
 
-	struct FramebufferDescriptorHasher
-	{
-		inline size_t operator()(const CGPUFramebufferDescriptor& a) const
-		{
-			return MurmurHashFn<CGPUFramebufferDescriptor>()(a);
-		}
-	};
-
-	struct FramebufferDescriptorEq
-	{
-		inline bool operator()(const CGPUFramebufferDescriptor& a, const CGPUFramebufferDescriptor& b) const
-		{
-			return !(bool)memcmp(&a, &b, sizeof(CGPUFramebufferDescriptor));
-		}
-	};
-
 	class FramebufferPool
-		: public ResourcePool<CGPUFramebufferDescriptor, Framebuffer, true, true, FramebufferDescriptorHasher, FramebufferDescriptorEq>
+		: public ResourcePool<CGPUFramebufferDescriptor, Framebuffer, true, true>
 	{
 	public:
 		FramebufferPool(CGPUDeviceId device, std::pmr::memory_resource* const memory_resource);

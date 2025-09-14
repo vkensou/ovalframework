@@ -7,22 +7,6 @@
 
 namespace HGEGraphics
 {
-	struct TextureViewDescriptorHasher
-	{
-		inline size_t operator()(const CGPUTextureViewDescriptor& a) const
-		{
-			return MurmurHashFn<CGPUTextureViewDescriptor>()(a);
-		}
-	};
-
-	struct TextureViewDescriptorEq
-	{
-		inline bool operator()(const CGPUTextureViewDescriptor& a, const CGPUTextureViewDescriptor& b) const
-		{
-			return !(bool)memcmp(&a, &b, sizeof(CGPUTextureViewDescriptor));
-		}
-	};
-
 	struct TextureView
 	{
 		CGPUTextureViewDescriptor descriptor() const
@@ -34,7 +18,7 @@ namespace HGEGraphics
 	};
 
 	class TextureViewPool
-		: public ResourcePool<CGPUTextureViewDescriptor, TextureView, true, true, TextureViewDescriptorHasher, TextureViewDescriptorEq>
+		: public ResourcePool<CGPUTextureViewDescriptor, TextureView, true, true>
 	{
 	public:
 		TextureViewPool(TextureViewPool* upstream, std::pmr::memory_resource* const memory_resource);

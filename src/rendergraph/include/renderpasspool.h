@@ -3,6 +3,7 @@
 #include "cgpu/api.h"
 #include "resourcepool.h"
 #include "hash.h"
+#include "compare.h"
 
 namespace HGEGraphics
 {
@@ -16,24 +17,10 @@ namespace HGEGraphics
 		CGPURenderPassDescriptor _descriptor;
 	};
 
-	struct RenderPassDescriptorHasher
-	{
-		inline size_t operator()(const CGPURenderPassDescriptor& a) const
-		{
-			return MurmurHashFn<CGPURenderPassDescriptor>()(a);
-		}
-	};
-
-	struct RenderPassDescriptorEq
-	{
-		inline bool operator()(const CGPURenderPassDescriptor& a, const CGPURenderPassDescriptor& b) const
-		{
-			return !(bool)memcmp(&a, &b, sizeof(CGPURenderPassDescriptor));
-		}
-	};
+	static_assert(sizeof(CGPURenderPassDescriptor) == sizeof(ECGPUSampleCountFlags) + sizeof(CGPUColorAttachment) * CGPU_MAX_MRT_COUNT + sizeof(CGPUDepthStencilAttachment));
 
 	class RenerPassPool
-		: public ResourcePool<CGPURenderPassDescriptor, RenderPass, true, true, RenderPassDescriptorHasher, RenderPassDescriptorEq>
+		: public ResourcePool<CGPURenderPassDescriptor, RenderPass, true, true>
 	{
 	public:
 		RenerPassPool(CGPUDeviceId device, std::pmr::memory_resource* const memory_resource);
