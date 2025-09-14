@@ -237,9 +237,9 @@ struct Application
 	{
 		void* buffer = nullptr;
 		buffer = frameRenderPackets[0].memory_resource->allocate(1024 * 1024, 8);
-		frameRenderPackets[0].memory_resource->deallocate(buffer, 8);
+		frameRenderPackets[0].memory_resource->deallocate(buffer, 1024 * 1024, 8);
 		buffer = frameRenderPackets[1].memory_resource->allocate(1024 * 1024, 8);
-		frameRenderPackets[1].memory_resource->deallocate(buffer, 8);
+		frameRenderPackets[1].memory_resource->deallocate(buffer, 1024 * 1024, 8);
 	}
 };
 
@@ -356,11 +356,11 @@ template<typename...T, typename Func>
 tf::Task createForeachTask(const SystemContext& context, entt::registry& registry, tf::Taskflow& taskFlow, Func&& func)
 {
 	auto view = registry.view<T...>();
-	return taskFlow.emplace([view, context, func](tf::Subflow& subflow) {
+	return taskFlow.emplace([view, context, func = std::forward<Func>(func)](tf::Subflow& subflow) {
 		subflow.for_each(view.begin(), view.end(), [view, context, func](auto entity)
 			{
 				auto args = std::tuple_cat(std::forward_as_tuple(context), view.get(entity));
-				std::apply(std::forward<Func>(func), std::move(args));
+				std::apply(func, std::move(args));
 			});
 		});
 }
@@ -369,11 +369,11 @@ template<typename...T, typename...Exclude, typename Func>
 tf::Task createForeachTask(const SystemContext& context, entt::registry& registry, tf::Taskflow& taskFlow, Func&& func, entt::exclude_t<Exclude...> exclude)
 {
 	auto view = registry.view<T...>(exclude);
-	return taskFlow.emplace([view, context, func](tf::Subflow& subflow) {
+	return taskFlow.emplace([view, context, func = std::forward<Func>(func)](tf::Subflow& subflow) {
 		subflow.for_each(view.begin(), view.end(), [view, context, func](auto entity)
 			{
 				auto args = std::tuple_cat(std::forward_as_tuple(context), view.get(entity));
-				std::apply(std::forward<Func>(func), std::move(args));
+				std::apply(func, std::move(args));
 			});
 		});
 }
