@@ -151,6 +151,13 @@ typedef struct oval_cgpu_device_t {
 	HGEGraphics::Texture* default_texture;
 
 	tf::Executor taskExecutor{ (size_t)std::max((int)std::thread::hardware_concurrency() - 2, 1) };
+
+	std::pmr::vector<std::unique_ptr<HGEGraphics::Mesh>> meshes;
+	std::pmr::vector<std::unique_ptr<HGEGraphics::Shader>> shaders;
+	std::pmr::vector<std::unique_ptr<HGEGraphics::ComputeShader>> computeShaders;
+	std::pmr::vector<CGPUSamplerId> samplers;
+	std::pmr::vector<std::unique_ptr<HGEGraphics::Texture>> textures;
+	std::pmr::vector<std::unique_ptr<HGEGraphics::Material>> materials;
 } oval_cgpu_device_t;
 
 void oval_process_load_queue(oval_cgpu_device_t* device);

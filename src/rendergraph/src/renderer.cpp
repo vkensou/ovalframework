@@ -3,10 +3,13 @@
 #include <vector>
 #include "hash.h"
 #include "rendergraph.h"
+#include <bit>
+#include "drawer.h"
+#include "compare.h"
 
 namespace HGEGraphics
 {
-	Shader* create_shader(CGPUDeviceId device, const uint8_t* vert_data, uint32_t vert_length, const uint8_t* frag_data, uint32_t frag_length, const CGPUBlendStateDescriptor& blend_desc, const CGPUDepthStateDescriptor& depth_desc, const CGPURasterizerStateDescriptor& rasterizer_state)
+	std::unique_ptr<Shader> create_shader(CGPUDeviceId device, const uint8_t* vert_data, uint32_t vert_length, const uint8_t* frag_data, uint32_t frag_length, const CGPUBlendStateDescriptor& blend_desc, const CGPUDepthStateDescriptor& depth_desc, const CGPURasterizerStateDescriptor& rasterizer_state)
 	{
 		CGPUShaderLibraryDescriptor vs_desc = {
 			.name = "VertexShaderLibrary",
@@ -45,18 +48,17 @@ namespace HGEGraphics
 		shader->blend_desc.p_attachments = shader->blend_attachment_states.data();
 		shader->depth_desc = depth_desc;
 		shader->rasterizer_state = rasterizer_state;
-		return shader;
+		return std::unique_ptr<Shader>(shader);
 	}
 
-	void free_shader(Shader* shader)
+	Shader::~Shader()
 	{
-		cgpu_device_free_root_signature(shader->root_sig->device, shader->root_sig);
-		cgpu_device_free_shader_library(shader->vs.library->device, shader->vs.library);
-		cgpu_device_free_shader_library(shader->ps.library->device, shader->ps.library);
-		delete shader;
+		cgpu_device_free_root_signature(root_sig->device, root_sig);
+		cgpu_device_free_shader_library(vs.library->device, vs.library);
+		cgpu_device_free_shader_library(ps.library->device, ps.library);
 	}
 
-	ComputeShader* create_compute_shader(CGPUDeviceId device, const uint8_t* comp_data, uint32_t comp_length)
+	std::unique_ptr<ComputeShader> create_compute_shader(CGPUDeviceId device, const uint8_t* comp_data, uint32_t comp_length)
 	{
 		CGPUShaderLibraryDescriptor cs_desc = {
 			.name = "ComputeShaderLibrary",
@@ -79,27 +81,26 @@ namespace HGEGraphics
 		auto shader = new ComputeShader();
 		shader->root_sig = root_sig;
 		shader->cs = ppl_shaders[0];
-		return shader;
+		return std::unique_ptr<ComputeShader>(shader);
 	}
 
-	void free_compute_shader(ComputeShader* shader)
+	ComputeShader::~ComputeShader()
 	{
-		cgpu_device_free_root_signature(shader->root_sig->device, shader->root_sig);
-		cgpu_device_free_shader_library(shader->cs.library->device, shader->cs.library);
-		delete shader;
+		cgpu_device_free_root_signature(root_sig->device, root_sig);
+		cgpu_device_free_shader_library(cs.library->device, cs.library);
 	}
 
-	Buffer* create_empty_buffer()
+	std::unique_ptr<Buffer> create_empty_buffer()
 	{
 		auto buffer = new Buffer();
 		buffer->handle = CGPU_NULLPTR;
 		buffer->type = CGPU_RESOURCE_TYPE_NONE;
 		buffer->cur_state = CGPU_RESOURCE_STATE_UNDEFINED;
 		buffer->dynamic_handle = {};
-		return buffer;
+		return std::unique_ptr<Buffer>(buffer);
 	}
 
-	Buffer* create_buffer(CGPUDeviceId device, const CGPUBufferDescriptor& desc)
+	std::unique_ptr<Buffer> create_buffer(CGPUDeviceId device, const CGPUBufferDescriptor& desc)
 	{
 		auto buffer = create_empty_buffer();
 		buffer->handle = cgpu_device_create_buffer(device, &desc);
@@ -107,14 +108,13 @@ namespace HGEGraphics
 		return buffer;
 	}
 
-	void free_buffer(Buffer* buffer)
+	Buffer::~Buffer()
 	{
-		if (buffer->handle)
-			cgpu_device_free_buffer(buffer->handle->device, buffer->handle);
-		delete buffer;
+		if (handle)
+			cgpu_device_free_buffer(handle->device, handle);
 	}
 
-	Mesh* create_empty_mesh()
+	std::unique_ptr<Mesh> create_empty_mesh()
 	{
 		auto mesh = new Mesh();
 		mesh->vertex_layout = {};
@@ -125,7 +125,7 @@ namespace HGEGraphics
 		mesh->vertex_buffer = nullptr;
 		mesh->index_buffer = nullptr;
 		mesh->prepared = false;
-		return mesh;
+		return std::unique_ptr<Mesh>(mesh);
 	}
 
 	void init_mesh(Mesh* mesh, CGPUDeviceId device, uint32_t vertex_count, uint32_t index_count, ECGPUPrimitiveTopology prim_topology, const CGPUVertexLayout& vertex_layout, uint32_t index_stride, bool update_vertex_data_from_compute_shader, bool update_index_data_from_compute_shader)
@@ -164,14 +164,14 @@ namespace HGEGraphics
 		mesh->prepared = false;
 	}
 
-	Mesh* create_mesh(CGPUDeviceId device, uint32_t vertex_count, uint32_t index_count, ECGPUPrimitiveTopology prim_topology, const CGPUVertexLayout& vertex_layout, uint32_t index_stride, bool update_vertex_data_from_compute_shader, bool update_index_data_from_compute_shader)
+	std::unique_ptr<Mesh> create_mesh(CGPUDeviceId device, uint32_t vertex_count, uint32_t index_count, ECGPUPrimitiveTopology prim_topology, const CGPUVertexLayout& vertex_layout, uint32_t index_stride, bool update_vertex_data_from_compute_shader, bool update_index_data_from_compute_shader)
 	{
 		auto mesh = create_empty_mesh();
-		init_mesh(mesh, device, vertex_count, index_count, prim_topology, vertex_layout, index_stride, update_vertex_data_from_compute_shader, update_index_data_from_compute_shader);
+		init_mesh(mesh.get(), device, vertex_count, index_count, prim_topology, vertex_layout, index_stride, update_vertex_data_from_compute_shader, update_index_data_from_compute_shader);
 		return mesh;
 	}
 
-	Mesh* create_dynamic_mesh(ECGPUPrimitiveTopology prim_topology, const CGPUVertexLayout& vertex_layout, uint32_t index_stride)
+	std::unique_ptr<Mesh> create_dynamic_mesh(ECGPUPrimitiveTopology prim_topology, const CGPUVertexLayout& vertex_layout, uint32_t index_stride)
 	{
 		auto mesh = create_empty_mesh();
 		mesh->vertex_layout = vertex_layout;
@@ -194,7 +194,7 @@ namespace HGEGraphics
 
 	buffer_handle_t declare_dynamic_vertex_buffer(Mesh* mesh, rendergraph_t* rg, uint32_t count)
 	{
-		auto dynamic_vertex_buffer = rendergraph_import_dynamic_buffer(rg, mesh->vertex_buffer);
+		auto dynamic_vertex_buffer = rendergraph_import_dynamic_buffer(rg, mesh->vertex_buffer.get());
 		rg_buffer_set_size(rg, dynamic_vertex_buffer, count * mesh->vertex_stride);
 		rg_buffer_set_type(rg, dynamic_vertex_buffer, CGPU_RESOURCE_TYPE_VERTEX_BUFFER);
 		rg_buffer_set_usage(rg, dynamic_vertex_buffer, CGPU_MEMORY_USAGE_GPU_ONLY);
@@ -205,7 +205,7 @@ namespace HGEGraphics
 
 	buffer_handle_t declare_dynamic_index_buffer(Mesh* mesh, rendergraph_t* rg, uint32_t count)
 	{
-		auto dynamic_index_buffer = rendergraph_import_dynamic_buffer(rg, mesh->index_buffer);
+		auto dynamic_index_buffer = rendergraph_import_dynamic_buffer(rg, mesh->index_buffer.get());
 		rg_buffer_set_size(rg, dynamic_index_buffer, count * mesh->index_stride);
 		rg_buffer_set_type(rg, dynamic_index_buffer, CGPU_RESOURCE_TYPE_INDEX_BUFFER);
 		rg_buffer_set_usage(rg, dynamic_index_buffer, CGPU_MEMORY_USAGE_GPU_ONLY);
@@ -222,16 +222,7 @@ namespace HGEGraphics
 		mesh->index_buffer->dynamic_handle = {};
 	}
 
-	void free_mesh(Mesh* mesh)
-	{
-		if (mesh->vertex_buffer)
-			free_buffer(mesh->vertex_buffer);
-		if (mesh->index_buffer)
-			free_buffer(mesh->index_buffer);
-		delete mesh;
-	}
-
-	Texture* create_empty_texture()
+	std::unique_ptr<Texture> create_empty_texture()
 	{
 		auto texture = new Texture();
 		texture->handle = CGPU_NULLPTR;
@@ -240,7 +231,7 @@ namespace HGEGraphics
 		texture->states_consistent = false;
 		texture->prepared = false;
 		texture->dynamic_handle = {};
-		return texture;
+		return std::unique_ptr<Texture>(texture);
 	}
 
 	void init_texture(Texture* texture, CGPUDeviceId device, const CGPUTextureDescriptor& desc)
@@ -274,20 +265,61 @@ namespace HGEGraphics
 		texture->prepared = false;
 	}
 
-	Texture* create_texture(CGPUDeviceId device, const CGPUTextureDescriptor& desc)
+	std::unique_ptr<Texture> create_texture(CGPUDeviceId device, const CGPUTextureDescriptor& desc)
 	{
 		auto texture = create_empty_texture();
-		init_texture(texture, device, desc);
+		init_texture(texture.get(), device, desc);
 		return texture;
 	}
 
-	void free_texture(Texture* texture)
+	Texture::~Texture()
 	{
-		if (texture->view)
-			cgpu_device_free_texture_view(texture->view->device, texture->view);
-		if (texture->handle)
-			cgpu_device_free_texture(texture->handle->device, texture->handle);
-		delete texture;
+		if (view)
+			cgpu_device_free_texture_view(view->device, view);
+		if (handle)
+			cgpu_device_free_texture(handle->device, handle);
+	}
+
+	Material::Material(CGPUDeviceId device, Shader* shader)
+		: device(device), shader(shader)
+	{
+
+	}
+
+	Material::~Material()
+	{
+		textures.clear();
+		samplers.clear();
+		buffers.clear();
+		shader = nullptr;
+		device = nullptr;
+	}
+
+	void Material::bindTexture(int set, int bind, Texture* texture)
+	{
+		textures.emplace_back(set, bind, texture);
+	}
+
+	void Material::bindSampler(int set, int bind, CGPUSamplerId sampler)
+	{
+		samplers.emplace_back(set, bind, sampler);
+	}
+
+	void Material::bindBuffer(int set, int bind, size_t size, const void* data)
+	{
+		auto align_size = std::bit_ceil(size);
+		auto desc = CGPUBufferDescriptor{
+			.size = align_size,
+			.name = "Material Data Buffer",
+			.descriptors = CGPU_RESOURCE_TYPE_UNIFORM_BUFFER,
+			.memory_usage = CGPU_MEMORY_USAGE_CPU_TO_GPU,
+		};
+		auto buffer = create_buffer(device, desc);
+		cgpu_buffer_map(buffer->handle, nullptr);
+		memcpy(buffer->handle->info->cpu_mapped_address, data, size);
+		cgpu_buffer_unmap(buffer->handle);
+		buffers.emplace_back(set, bind, buffer.get());
+		ownedBuffers.push_back(std::move(buffer));
 	}
 
 	void init_backbuffer(Backbuffer* backbuffer, CGPUSwapChainId swapchain, int index)
@@ -300,12 +332,12 @@ namespace HGEGraphics
 		backbuffer->texture.dynamic_handle = {};
 	}
 
-	void free_backbuffer(Backbuffer* backbuffer)
+	Backbuffer::~Backbuffer()
 	{
-		backbuffer->texture.handle = CGPU_NULLPTR;
-		backbuffer->texture.view = CGPU_NULLPTR;
-		backbuffer->texture.cur_states.clear();
-		backbuffer->texture.states_consistent = false;
+		texture.handle = CGPU_NULLPTR;
+		texture.view = CGPU_NULLPTR;
+		texture.cur_states.clear();
+		texture.states_consistent = false;
 	}
 
 	void push_constants(RenderPassEncoder* encoder, Shader* shader, const char* name, const void* data)
@@ -434,7 +466,7 @@ namespace HGEGraphics
 
 			if (data_count > 0)
 			{
-				bool dset_dirty = memcmp(datas, encoder->last_bind_resources[i], sizeof(CGPUDescriptorData) * data_count) != 0;
+				bool dset_dirty = !compare(datas, encoder->last_bind_resources[i], data_count);
 				bool offset_size_dirty = memcmp(encoder->buffer_offset_sizes, encoder->last_buffer_offset_sizes[i], sizeof(float) * 2 * offset_size_count);
 				if (dset_dirty || offset_size_dirty)
 				{
@@ -448,6 +480,16 @@ namespace HGEGraphics
 				}
 			}
 		}
+	}
+
+	void update_material(RenderPassEncoder* encoder, Material* material)
+	{
+		for (auto& bind : material->buffers)
+			set_global_buffer(encoder, bind.buffer, bind.set, bind.bind);
+		for (auto& bind : material->textures)
+			set_global_texture(encoder, bind.texture, bind.set, bind.bind);
+		for (auto& bind : material->samplers)
+			set_global_sampler(encoder, bind.sampler, bind.set, bind.bind);
 	}
 
 	void update_mesh(RenderPassEncoder* encoder, Mesh* mesh)
@@ -523,6 +565,45 @@ namespace HGEGraphics
 	static CGPUVertexLayout procedure_vertex_layout = { .attribute_count = 0 };
 	void draw_procedure(RenderPassEncoder* encoder, Shader* shader, ECGPUPrimitiveTopology mesh_topology, uint32_t vertex_count)
 	{
+		update_render_pipeline(encoder, shader, mesh_topology, procedure_vertex_layout);
+		update_descriptor_set(encoder, shader->root_sig, true);
+		cgpu_render_pass_encoder_draw(encoder->encoder, vertex_count, 0);
+	}
+
+	void draw(RenderPassEncoder* encoder, Material* material, Mesh* mesh)
+	{
+		if (!mesh->prepared || !material)
+			return;
+		update_material(encoder, material);
+		auto shader = material->shader;
+		update_render_pipeline(encoder, shader, mesh->prim_topology, mesh->vertex_layout);
+		update_descriptor_set(encoder, shader->root_sig, true);
+		update_mesh(encoder, mesh);
+		if (encoder->last_index_buffer)
+			cgpu_render_pass_encoder_draw_indexed(encoder->encoder, mesh->index_count, 0, 0);
+		else
+			cgpu_render_pass_encoder_draw(encoder->encoder, mesh->vertices_count, 0);
+	}
+
+	void draw_submesh(RenderPassEncoder* encoder, Material* material, Mesh* mesh, uint32_t index_count, uint32_t first_index, uint32_t vertex_count, uint32_t first_vertex)
+	{
+		if (!mesh->prepared)
+			return;
+		update_material(encoder, material);
+		auto shader = material->shader;
+		update_render_pipeline(encoder, shader, mesh->prim_topology, mesh->vertex_layout);
+		update_descriptor_set(encoder, shader->root_sig, true);
+		update_mesh(encoder, mesh);
+		if (encoder->last_index_buffer)
+			cgpu_render_pass_encoder_draw_indexed(encoder->encoder, index_count, first_index, first_vertex);
+		else
+			cgpu_render_pass_encoder_draw(encoder->encoder, vertex_count, first_vertex);
+	}
+
+	void draw_procedure(RenderPassEncoder* encoder, Material* material, ECGPUPrimitiveTopology mesh_topology, uint32_t vertex_count)
+	{
+		update_material(encoder, material);
+		auto shader = material->shader;
 		update_render_pipeline(encoder, shader, mesh_topology, procedure_vertex_layout);
 		update_descriptor_set(encoder, shader->root_sig, true);
 		cgpu_render_pass_encoder_draw(encoder->encoder, vertex_count, 0);

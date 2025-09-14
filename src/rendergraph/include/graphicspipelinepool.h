@@ -4,6 +4,7 @@
 #include "cgpu/api.h"
 #include "hash.h"
 #include <string.h>
+#include "compare.h"
 
 namespace HGEGraphics
 {
@@ -26,9 +27,21 @@ namespace HGEGraphics
 
 	struct PSOKeyHasher
 	{
-		inline size_t operator()(const PSOKey& a) const
+		inline size_t operator()(const PSOKey& key) const
 		{
-			return MurmurHashFn<PSOKey>()(a);
+			size_t seed = 0;
+
+			hash_combine(seed, key.shader);
+			hash_combine(seed, key.vertex_layout);
+			hash_combine(seed, key.prim_topology);
+			hash_combine(seed, key.blend_desc);
+			hash_combine(seed, key.depth_desc);
+			hash_combine(seed, key.rasterizer_state);
+			hash_combine(seed, key.render_pass);
+			hash_combine(seed, key.subpass);
+			hash_combine(seed, key.render_target_count);
+
+			return seed;
 		}
 	};
 
@@ -36,7 +49,9 @@ namespace HGEGraphics
 	{
 		inline bool operator()(const PSOKey& a, const PSOKey& b) const
 		{
-			return !(bool)memcmp(&a, &b, sizeof(PSOKey));
+			return a.shader == b.shader && a.vertex_layout == b.vertex_layout && a.prim_topology == b.prim_topology 
+				&& a.blend_desc == b.blend_desc && a.rasterizer_state == b.rasterizer_state && a.render_pass == b.render_pass
+				&& a.subpass == b.subpass && a.render_target_count == b.render_target_count;
 		}
 	};
 

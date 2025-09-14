@@ -39,4 +39,83 @@ namespace HGEGraphics
         MurmurHashFn<T> hasher;
         return seed ^ (hasher(v) << 1u);
     }
+
+    // 辅助函数：组合哈希值
+    template<typename T>
+    void hash_combine(size_t& seed, const T& value)
+    {
+        std::hash<T> hasher;
+        seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    }
+}
+
+namespace std {
+	template <>
+	struct hash<CGPUVertexLayout> {
+		size_t operator()(const CGPUVertexLayout& a) const noexcept {
+			size_t seed = 0;
+
+			HGEGraphics::hash_combine(seed, a.attribute_count);
+			HGEGraphics::hash_combine(seed, a.p_attributes);
+
+			return seed;
+		}
+	};
+
+	template <>
+	struct hash<CGPUBlendStateDescriptor> {
+		size_t operator()(const CGPUBlendStateDescriptor& a) const noexcept {
+			size_t seed = 0;
+
+			HGEGraphics::hash_combine(seed, a.attachment_count);
+			HGEGraphics::hash_combine(seed, a.p_attachments);
+			HGEGraphics::hash_combine(seed, a.alpha_to_coverage);
+			HGEGraphics::hash_combine(seed, a.independent_blend);
+
+			return seed;
+		}
+	};
+
+	template <>
+	struct hash<CGPUDepthStateDescriptor> {
+		size_t operator()(const CGPUDepthStateDescriptor& a) const noexcept {
+			size_t seed = 0;
+
+			HGEGraphics::hash_combine(seed, a.depth_test);
+			HGEGraphics::hash_combine(seed, a.depth_write);
+			HGEGraphics::hash_combine(seed, a.depth_op);
+			HGEGraphics::hash_combine(seed, a.stencil_test);
+			HGEGraphics::hash_combine(seed, a.stencil_read_mask);
+			HGEGraphics::hash_combine(seed, a.stencil_write_mask);
+			HGEGraphics::hash_combine(seed, a.stencil_front_op);
+			HGEGraphics::hash_combine(seed, a.stencil_front_fail_op);
+			HGEGraphics::hash_combine(seed, a.depth_front_fail_op);
+			HGEGraphics::hash_combine(seed, a.stencil_front_pass_op);
+			HGEGraphics::hash_combine(seed, a.stencil_back_op);
+			HGEGraphics::hash_combine(seed, a.stencil_back_fail_op);
+			HGEGraphics::hash_combine(seed, a.depth_back_fail_op);
+			HGEGraphics::hash_combine(seed, a.stencil_back_pass_op);
+
+			return seed;
+		}
+	};
+
+	template <>
+	struct hash<CGPURasterizerStateDescriptor> {
+		size_t operator()(const CGPURasterizerStateDescriptor& a) const noexcept {
+			size_t seed = 0;
+
+			// 组合各个字段的哈希值
+			HGEGraphics::hash_combine(seed, a.cull_mode);
+			HGEGraphics::hash_combine(seed, a.depth_bias);
+			HGEGraphics::hash_combine(seed, a.slope_scaled_depth_bias);
+			HGEGraphics::hash_combine(seed, a.fill_mode);
+			HGEGraphics::hash_combine(seed, a.front_face);
+			HGEGraphics::hash_combine(seed, a.enable_multi_sample);
+			HGEGraphics::hash_combine(seed, a.enable_scissor);
+			HGEGraphics::hash_combine(seed, a.enable_depth_clamp);
+
+			return seed;
+		}
+	};
 }

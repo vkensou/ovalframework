@@ -270,7 +270,7 @@ oval_device_t* oval_create_device(const oval_device_descriptor* device_descripto
 	uint8_t blit_frag_spv[] = {
 		#include "blit.ps.spv.h"
 	};
-	device_cgpu->blit_shader = HGEGraphics::create_shader(device_cgpu->device, blit_vert_spv, sizeof(blit_vert_spv), blit_frag_spv, sizeof(blit_frag_spv), blit_blend_desc, depth_desc, rasterizer_state);
+	device_cgpu->blit_shader = oval_create_shader(&device_cgpu->super, blit_vert_spv, sizeof(blit_vert_spv), blit_frag_spv, sizeof(blit_frag_spv), blit_blend_desc, depth_desc, rasterizer_state);
 
 	CGPUSamplerDescriptor blit_linear_sampler_desc = {
 		.min_filter = CGPU_FILTER_TYPE_LINEAR,
@@ -282,7 +282,7 @@ oval_device_t* oval_create_device(const oval_device_descriptor* device_descripto
 		.mip_lod_bias = 0,
 		.max_anisotropy = 1,
 	};
-	device_cgpu->blit_linear_sampler = cgpu_device_create_sampler(device_cgpu->device, &blit_linear_sampler_desc);
+	device_cgpu->blit_linear_sampler = oval_create_sampler(&device_cgpu->super, &blit_linear_sampler_desc);
 
 	CGPUBlendAttachmentState imgui_blend_attachments = {
 		.enable = true,
@@ -306,7 +306,7 @@ oval_device_t* oval_create_device(const oval_device_descriptor* device_descripto
 	uint8_t imgui_frag_spv[] = {
 		#include "imgui.ps.spv.h"
 	};
-	device_cgpu->imgui_shader = HGEGraphics::create_shader(device_cgpu->device, imgui_vert_spv, sizeof(imgui_vert_spv), imgui_frag_spv, sizeof(imgui_frag_spv), imgui_blend_desc, depth_desc, rasterizer_state);
+	device_cgpu->imgui_shader = oval_create_shader(&device_cgpu->super, imgui_vert_spv, sizeof(imgui_vert_spv), imgui_frag_spv, sizeof(imgui_frag_spv), imgui_blend_desc, depth_desc, rasterizer_state);
 
 	CGPUVertexAttribute imgui_vertex_attributes[3] = {
 			{ "POSITION", 1, CGPU_VERTEX_FORMAT_FLOAT32X2, 0, 0, sizeof(float) * 2, CGPU_VERTEX_INPUT_RATE_VERTEX },
@@ -318,7 +318,7 @@ oval_device_t* oval_create_device(const oval_device_descriptor* device_descripto
 		.attribute_count = 3,
 		.p_attributes = imgui_vertex_attributes,
 	};
-	device_cgpu->imgui_mesh = HGEGraphics::create_dynamic_mesh(CGPU_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, imgui_vertex_layout, sizeof(ImDrawIdx));
+	device_cgpu->imgui_mesh = oval_create_dynamic_mesh(&device_cgpu->super, CGPU_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, imgui_vertex_layout, sizeof(ImDrawIdx));
 
 	{
 		unsigned char* fontPixels;
@@ -353,7 +353,7 @@ oval_device_t* oval_create_device(const oval_device_descriptor* device_descripto
 		.mip_lod_bias = 0,
 		.max_anisotropy = 1,
 	};
-	device_cgpu->imgui_font_sampler = cgpu_device_create_sampler(device_cgpu->device, &imgui_font_sampler_desc);
+	device_cgpu->imgui_font_sampler = oval_create_sampler(&device_cgpu->super, &imgui_font_sampler_desc);
 
 	return (oval_device_t*)device_cgpu;
 }
@@ -507,10 +507,6 @@ void render(oval_cgpu_device_t* device, const oval_submit_context& submit_contex
 
 bool on_resize(oval_cgpu_device_t* D)
 {
-	for (uint32_t i = 0; i < D->backbuffer.size(); i++)
-	{
-		HGEGraphics::free_backbuffer(&D->backbuffer[i]);
-	}
 	D->backbuffer.clear();
 
 	if (D->swapchain)
@@ -800,31 +796,12 @@ void oval_free_device(oval_device_t* device)
 	ImGui_ImplSDL2_Shutdown();
 	ImGui::DestroyContext();
 
-	if (D->default_texture)
-		free_texture(D->default_texture);
-
-	if (D->imgui_shader)
-		free_shader(D->imgui_shader);
+	D->default_texture = nullptr;
 	D->imgui_shader = nullptr;
-
-	if (D->imgui_mesh)
-		free_mesh(D->imgui_mesh);
 	D->imgui_mesh = nullptr;
-
-	if (D->imgui_font_texture)
-		free_texture(D->imgui_font_texture);
 	D->imgui_font_texture = nullptr;
-
-	if (D->imgui_font_sampler)
-		cgpu_device_free_sampler(D->device, D->imgui_font_sampler);
 	D->imgui_font_sampler = CGPU_NULLPTR;
-
-	if (D->blit_shader)
-		free_shader(D->blit_shader);
 	D->blit_shader = nullptr;
-
-	if (D->blit_linear_sampler)
-		cgpu_device_free_sampler(D->device, D->blit_linear_sampler);
 	D->blit_linear_sampler = nullptr;
 
 	for (uint32_t i = 0; i < D->swapchain_prepared_semaphores.size(); ++i)
@@ -841,10 +818,6 @@ void oval_free_device(oval_device_t* device)
 	}
 	D->render_finished_semaphores.clear();
 
-	for (uint32_t i = 0; i < D->backbuffer.size(); ++i)
-	{
-		HGEGraphics::free_backbuffer(&D->backbuffer[i]);
-	}
 	D->backbuffer.clear();
 
 	cgpu_device_free_swap_chain(D->device, D->swapchain);
@@ -859,6 +832,15 @@ void oval_free_device(oval_device_t* device)
 	{
 		D->frameDatas[i].free();
 	}
+
+	D->materials.clear();
+	D->meshes.clear();
+	D->shaders.clear();
+	D->computeShaders.clear();
+	D->textures.clear();
+	for (auto sampler : D->samplers)
+		cgpu_device_free_sampler(D->device, sampler);
+	D->samplers.clear();
 
 	cgpu_device_free_queue(D->device, D->gfx_queue);
 	D->gfx_queue = CGPU_NULLPTR;

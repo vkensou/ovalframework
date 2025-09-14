@@ -26,56 +26,6 @@ struct BindSampler
 	CGPUSamplerId sampler;
 };
 
-struct Material
-{
-	oval_device_t* device;
-	HGEGraphics::Shader* shader;
-	std::vector<BindBuffer> buffers;
-	std::vector<BindTexture> textures;
-	std::vector<BindSampler> samplers;
-
-	template<typename T>
-	void bindBuffer(int set, int bind, const T& data)
-	{
-		auto size = sizeof(T);
-		auto align_size = std::bit_ceil(size);
-		auto desc = CGPUBufferDescriptor{
-			.size = align_size,
-			.name = "Material Data Buffer",
-			.descriptors = CGPU_RESOURCE_TYPE_UNIFORM_BUFFER,
-			.memory_usage = CGPU_MEMORY_USAGE_CPU_TO_GPU,
-		};
-		auto buffer = oval_create_buffer(device, &desc);
-		cgpu_buffer_map(buffer->handle, nullptr);
-		memcpy(buffer->handle->info->cpu_mapped_address, &data, size);
-		cgpu_buffer_unmap(buffer->handle);
-		buffers.emplace_back(set, bind, buffer);
-	}
-
-	void free()
-	{
-		textures.clear();
-		samplers.clear();
-		for (auto& bind : buffers)
-		{
-			oval_free_buffer(device, bind.buffer);
-		}
-		buffers.clear();
-		shader = nullptr;
-		device = nullptr;
-	}
-};
-
-void bindMaterial(HGEGraphics::RenderPassEncoder* encoder, const Material& material)
-{
-	for (auto& bind : material.buffers)
-		set_global_buffer(encoder, bind.buffer, bind.set, bind.bind);
-	for (auto& bind : material.textures)
-		set_global_texture(encoder, bind.texture, bind.set, bind.bind);
-	for (auto& bind : material.samplers)
-		set_global_sampler(encoder, bind.sampler, bind.set, bind.bind);
-}
-
 struct Position
 {
 	HMM_Vec3 value;
@@ -278,7 +228,7 @@ struct Application
 	std::vector<HGEGraphics::Shader*> shaders;
 	CGPUSamplerId texture_sampler = CGPU_NULLPTR;
 	HGEGraphics::Texture* color_map{ nullptr };
-	std::vector<Material> materials;
+	std::vector<HGEGraphics::Material*> materials;
 	std::pmr::synchronized_pool_resource root_memory_resource;
 	std::array<FrameRenderPacket, 2> frameRenderPackets;
 
@@ -340,44 +290,22 @@ void _init_resource(Application& app)
 
 	app.color_map = oval_load_texture(app.device, "media/textures/tex.jpg", true);
 
-	app.materials.push_back({});
-	auto& last = app.materials.back();
-	last.device = app.device;
-	last.shader = app.shaders[0];
-	last.textures.emplace_back(1, 1, app.color_map);
-	last.samplers.emplace_back(1, 2, app.texture_sampler);
+	auto material = oval_create_material(app.device, app.shaders[0]);
+	material->bindTexture(1, 1, app.color_map);
+	material->bindSampler(1, 2, app.texture_sampler);
 	auto materialData = MaterialData{
 		.shininess = HMM_V4(90, 0, 0, 0),
 		.albedo = HMM_V4(1, 1, 1, 1),
 	};
-	last.bindBuffer(1, 0, materialData);
+	material->bindBuffer<MaterialData>(1, 0, materialData);
+	app.materials.push_back(material);
 }
 
 void _free_resource(Application& app)
 {
-	for (auto& mat : app.materials)
-	{
-		mat.free();
-	}
 	app.materials.clear();
-
-	oval_free_texture(app.device, app.color_map);
 	app.color_map = nullptr;
-
-	oval_free_sampler(app.device, app.texture_sampler);
 	app.texture_sampler = nullptr;
-
-	for (auto mesh : app.meshes)
-	{
-		oval_free_mesh(app.device, mesh);
-	}
-	app.meshes.clear();
-
-	for (auto shader : app.shaders)
-	{
-		oval_free_shader(app.device, shader);
-	}
-	app.shaders.clear();
 }
 
 void _init_world(Application& app)
@@ -637,18 +565,11 @@ void submit(Application& app, FrameRenderPacket& lastFrameRenderPacket, oval_dev
 				MainPassPassData* resolved_passdata = (MainPassPassData*)passdata;
 				Application& app = *resolved_passdata->app;
 				set_global_dynamic_buffer(encoder, resolved_passdata->pass_ubo_handle, 0, 0);
-				Material* lastMaterial = nullptr;
 				for (size_t i = 0; i < resolved_passdata->view->renderObjects.size(); ++i)
 				{
 					auto& obj = resolved_passdata->view->renderObjects[i];
-					auto& material = app.materials[obj.material];
-					if (lastMaterial != &material)
-					{
-						bindMaterial(encoder, material);
-						lastMaterial = &material;
-					}
 					set_global_buffer_with_offset_size(encoder, resolved_passdata->object_ubo_handle, 2, 0, i * sizeof(ObjectData), sizeof(ObjectData));
-					draw(encoder, material.shader, app.meshes[obj.mesh]);
+					draw(encoder, app.materials[obj.material], app.meshes[obj.mesh]);
 				}
 			}, sizeof(MainPassPassData), (void**)&passdata);
 		passdata->app = &app;
