@@ -41,14 +41,13 @@ typedef enum update_frequency_mode_e
 {
     UPDATE_FREQUENCY_MODE_FIXED,
     UPDATE_FREQUENCY_MODE_VARIABLE,
-    UPDATE_FREQUENCY_MODE_CAPPED_VARIABLE,
 } update_frequency_mode_e;
 
 typedef enum render_frequency_mode_e
 {
     RENDER_FREQUENCY_MODE_VSYNC,
-    RENDER_FREQUENCY_MODE_UNCAPPED,
-    RENDER_FREQUENCY_MODE_CAPPED,
+    RENDER_FREQUENCY_MODE_UNLIMITED,
+    RENDER_FREQUENCY_MODE_LIMITED,
 } render_frequency_mode_e;
 
 typedef struct oval_device_descriptor

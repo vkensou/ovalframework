@@ -588,7 +588,7 @@ void oval_runloop(oval_device_t* device)
 
 	while (quit == false)
 	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(0));
+		auto start_of_frame_time = std::chrono::high_resolution_clock::now();
 
 		while (SDL_PollEvent(&e))
 		{
@@ -615,13 +615,6 @@ void oval_runloop(oval_device_t* device)
 
 		if (requestResize)
 			continue;
-
-		bool rdc_capturing = false;
-		if (D->rdc && D->rdc_capture)
-		{
-			D->rdc->StartFrameCapture(nullptr, nullptr);
-			rdc_capturing = true;
-		}
 
 		auto& cur_frame_data = D->frameDatas[D->current_frame_index];
 		cgpu_wait_fences(1, &cur_frame_data.inflightFence);
@@ -668,10 +661,17 @@ void oval_runloop(oval_device_t* device)
 
 		lastTime = currentTime;
 
+		bool rdc_capturing = false;
+		if (D->rdc && D->rdc_capture)
+		{
+			D->rdc->StartFrameCapture(nullptr, nullptr);
+			rdc_capturing = true;
+		}
+
 		tf::Taskflow flow;
 		tf::Task last_update_flow = flow.placeholder();
 
-		double fixed_update_time_step = D->super.descriptor.fixed_update_time_step;
+		double fixed_update_time_step = D->super.descriptor.update_frequecy_mode == UPDATE_FREQUENCY_MODE_FIXED ? D->super.descriptor.fixed_update_time_step : lag;
 		while (lag >= fixed_update_time_step)
 		{
 			time_since_startup += fixed_update_time_step;
@@ -779,6 +779,18 @@ void oval_runloop(oval_device_t* device)
 				D->rdc->LaunchReplayUI(1, "");
 			}
 		}
+
+		long sleep_duration = 0;
+		if (D->super.descriptor.render_frequecy_mode == RENDER_FREQUENCY_MODE_LIMITED)
+		{
+			double render_max_delta_time = 1.0 / D->super.descriptor.target_fps;
+			auto end_of_frame_time = std::chrono::high_resolution_clock::now();
+			double need_sleep = std::chrono::duration_cast<std::chrono::duration<double>>(start_of_frame_time - end_of_frame_time).count() + render_max_delta_time;
+			need_sleep = render_max_delta_time - elapsedTime;
+			sleep_duration = std::max<long>(need_sleep * 1000000, 0);
+		}
+
+		std::this_thread::sleep_for(std::chrono::microseconds(sleep_duration));
 	}
 
 	cgpu_queue_wait_idle(D->gfx_queue);

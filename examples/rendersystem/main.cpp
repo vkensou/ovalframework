@@ -604,6 +604,7 @@ void on_imgui(oval_device_t* device, oval_render_context render_context)
 {
 	ImGui::Text("Hello, ImGui!");
 	ImGui::Text("%d", render_context.fps);
+	ImGui::Text("%lf", render_context.delta_time_double);
 	if (ImGui::Button("Capture"))
 		oval_render_debug_capture(device);
 	
@@ -646,9 +647,12 @@ int SDL_main(int argc, char *argv[])
 		.on_submit = on_submit,
 		.width = width,
 		.height = height,
+		.update_frequecy_mode = UPDATE_FREQUENCY_MODE_VARIABLE,
 		.fixed_update_time_step = 1.0 / 1,
-		.render_need_interpolate = true,
-		.enable_capture = false,
+		.render_frequecy_mode = RENDER_FREQUENCY_MODE_LIMITED,
+		.render_need_interpolate = false,
+		.target_fps = 100,
+		.enable_capture = true,
 		.enable_profile = false,
 	};
 	app.device = oval_create_device(&device_descriptor);
