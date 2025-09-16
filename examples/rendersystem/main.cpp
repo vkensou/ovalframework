@@ -174,7 +174,7 @@ void updateRotateInterpolation(const SystemContext& context, const Rotate& rotat
 {
 	auto rot1 = rotate.base * HMM_QFromAxisAngle_LH(rotate.axis, context.time_since_startup * rotate.speed);
 	auto rot2 = rotate.base * HMM_QFromAxisAngle_LH(rotate.axis, (context.time_since_startup + context.interpolation_time) * rotate.speed);
-	rotateInterp.value = HMM_MulQ(HMM_InvQ(rot1), rot2);
+	rotateInterp.value = HMM_MulQ(HMM_InvQ(rot2), rot1);
 }
 
 void updateShowMatrixStatic(const SystemContext& context, const Matrix& matrix, ShowMatrix& showMatrix)
@@ -190,7 +190,7 @@ void updateShowMatrixMoveOnly(const SystemContext& context, const Matrix& matrix
 void updateShowMatrixRotateOnly(const SystemContext& context, const Matrix& matrix, const RotateInterpolation& rotateInterp, ShowMatrix& showMatrix)
 {
 	auto oriPosition = HMM_M4GetTranslate(matrix.model);
-	auto oriRotation = HMM_M4ToQ_RH(matrix.model);
+	auto oriRotation = HMM_M4ToQ_LH(matrix.model);
 	auto newRotation = HMM_MulQ(oriRotation, rotateInterp.value);
 	showMatrix.model = HMM_TRS(oriPosition, newRotation, HMM_V3_One);
 }
@@ -198,7 +198,7 @@ void updateShowMatrixRotateOnly(const SystemContext& context, const Matrix& matr
 void updateShowMatrixMoveAndRotate(const SystemContext& context, const Matrix& matrix, const MoveInterpolation& moveInterp, const RotateInterpolation& rotateInterp, ShowMatrix& showMatrix)
 {
 	auto oriPosition = HMM_M4GetTranslate(matrix.model);
-	auto oriRotation = HMM_M4ToQ_RH(matrix.model);
+	auto oriRotation = HMM_M4ToQ_LH(matrix.model);
 	auto newPosition = oriPosition + moveInterp.value;
 	auto newRotation = HMM_MulQ(oriRotation, rotateInterp.value);
 	showMatrix.model = HMM_TRS(newPosition, newRotation, HMM_V3_One);
@@ -604,6 +604,7 @@ void on_imgui(oval_device_t* device, oval_render_context render_context)
 {
 	ImGui::Text("Hello, ImGui!");
 	ImGui::Text("%d", render_context.fps);
+	ImGui::Text("%lf", render_context.delta_time_double);
 	if (ImGui::Button("Capture"))
 		oval_render_debug_capture(device);
 	
@@ -646,8 +647,11 @@ int SDL_main(int argc, char *argv[])
 		.on_submit = on_submit,
 		.width = width,
 		.height = height,
+		.update_frequecy_mode = UPDATE_FREQUENCY_MODE_VARIABLE,
 		.fixed_update_time_step = 1.0 / 1,
-		.render_need_interpolate = true,
+		.render_frequecy_mode = RENDER_FREQUENCY_MODE_LIMITED,
+		.render_need_interpolate = false,
+		.target_fps = 100,
 		.enable_capture = false,
 		.enable_profile = false,
 	};

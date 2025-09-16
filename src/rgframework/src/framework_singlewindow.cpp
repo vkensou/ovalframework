@@ -577,19 +577,22 @@ void oval_runloop(oval_device_t* device)
 	bool requestResize = false;
 
 	D->current_frame_index = 0;
-	auto startTime = std::chrono::high_resolution_clock::now();
-	auto lastTime = startTime;
 	double time_since_startup = 0;
-	double lag = 0;
-	auto lastCountFPSTime = startTime;
+	double lag;
+	if (D->super.descriptor.update_frequecy_mode == UPDATE_FREQUENCY_MODE_FIXED)
+		lag = D->super.descriptor.fixed_update_time_step;
+	else if (D->super.descriptor.update_frequecy_mode == UPDATE_FREQUENCY_MODE_VARIABLE && D->super.descriptor.render_frequecy_mode == RENDER_FREQUENCY_MODE_LIMITED)
+		lag = 1.0 / D->super.descriptor.target_fps;
+	else
+		lag = 1.0 / 60;
 	int countFrame = 0;
 	int lastFPS = 0;
 	std::vector<tf::Taskflow> update_flows;
 
+	auto lastFrameSampleTime = std::chrono::high_resolution_clock::now();
+	auto lastCountFPSTime = lastFrameSampleTime;
 	while (quit == false)
 	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(0));
-
 		while (SDL_PollEvent(&e))
 		{
 			ImGui_ImplSDL2_ProcessEvent(&e);
@@ -615,13 +618,6 @@ void oval_runloop(oval_device_t* device)
 
 		if (requestResize)
 			continue;
-
-		bool rdc_capturing = false;
-		if (D->rdc && D->rdc_capture)
-		{
-			D->rdc->StartFrameCapture(nullptr, nullptr);
-			rdc_capturing = true;
-		}
 
 		auto& cur_frame_data = D->frameDatas[D->current_frame_index];
 		cgpu_wait_fences(1, &cur_frame_data.inflightFence);
@@ -652,27 +648,18 @@ void oval_runloop(oval_device_t* device)
 		ImGui_ImplSDL2_NewFrame();
 		ImGui::NewFrame();
 
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		auto elapsedTime = std::chrono::duration_cast<std::chrono::duration<double>>(currentTime - lastTime).count();
-		auto elapsedFPSTime = std::chrono::duration_cast<std::chrono::duration<double>>(currentTime - lastCountFPSTime).count();
-		lag += elapsedTime;
-
-		if (elapsedFPSTime < 1)
-			countFrame++;
-		else
+		bool rdc_capturing = false;
+		if (D->rdc && D->rdc_capture)
 		{
-			lastFPS = countFrame;
-			countFrame = 0;
-			lastCountFPSTime = currentTime;
+			D->rdc->StartFrameCapture(nullptr, nullptr);
+			rdc_capturing = true;
 		}
-
-		lastTime = currentTime;
 
 		tf::Taskflow flow;
 		tf::Task last_update_flow = flow.placeholder();
 
-		double fixed_update_time_step = D->super.descriptor.fixed_update_time_step;
-		while (lag >= fixed_update_time_step)
+		double fixed_update_time_step = D->super.descriptor.update_frequecy_mode == UPDATE_FREQUENCY_MODE_FIXED ? D->super.descriptor.fixed_update_time_step : lag;
+		while (lag > 0 && lag >= fixed_update_time_step)
 		{
 			time_since_startup += fixed_update_time_step;
 			oval_update_context update_context
@@ -779,6 +766,35 @@ void oval_runloop(oval_device_t* device)
 				D->rdc->LaunchReplayUI(1, "");
 			}
 		}
+
+		long sleep_duration = 0;
+		if (D->super.descriptor.render_frequecy_mode == RENDER_FREQUENCY_MODE_LIMITED)
+		{
+			long long render_max_delta_time = 1000000 / D->super.descriptor.target_fps;
+			auto waiting = lastFrameSampleTime + std::chrono::microseconds(render_max_delta_time);
+			while (std::chrono::high_resolution_clock::now() < waiting)
+				std::this_thread::sleep_for(std::chrono::microseconds(0));
+		}
+		else
+		{
+			std::this_thread::sleep_for(std::chrono::microseconds(0));
+		}
+
+		auto fpsSampleTime = std::chrono::high_resolution_clock::now();
+		auto elapsedFPSTime = std::chrono::duration_cast<std::chrono::duration<double>>(fpsSampleTime - lastCountFPSTime).count();
+		if (elapsedFPSTime < 1)
+			countFrame++;
+		else
+		{
+			lastFPS = countFrame;
+			countFrame = 0;
+			lastCountFPSTime = fpsSampleTime;
+		}
+
+		auto end_of_time = std::chrono::high_resolution_clock::now();
+		auto elapsedTime = std::chrono::duration_cast<std::chrono::duration<double>>(end_of_time - lastFrameSampleTime).count();
+		lag += elapsedTime;
+		lastFrameSampleTime = end_of_time;
 	}
 
 	cgpu_queue_wait_idle(D->gfx_queue);
