@@ -20,6 +20,7 @@ end
 add_requires("libsdl2 2.30.7", {configs = {sdlmain = true, shared = false}})
 add_requires("imgui v1.91.1-docking")
 add_requires("mimalloc")
+add_requires("tinygltf")
 
 if is_plat("windows", "linux", "android") then
     option("use_vulkan")
@@ -49,6 +50,7 @@ target("rgframework")
     add_packages("imgui", {public = true})
     add_packages("mimalloc", {public = true})
     add_packages("taskflow", {public = true})
+    add_packages("tinygltf")
     add_rules("utils.hlsl2spv", {bin2c = true})
     set_pcheader("src/rgframework/src/pcheader.h")
     add_includedirs("src/rgframework/include", {public = true})
