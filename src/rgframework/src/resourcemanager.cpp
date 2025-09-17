@@ -1,5 +1,4 @@
 ﻿#include "cgpu_device.h"
-#include "tiny_gltf.h"
 
 HGEGraphics::Texture* oval_create_texture(oval_device_t* device, const CGPUTextureDescriptor& desc)
 {
@@ -110,10 +109,6 @@ bool oval_mesh_prepared(oval_device_t* device, HGEGraphics::Mesh* mesh)
 HGEGraphics::Buffer* oval_mesh_get_vertex_buffer(oval_device_t* device, HGEGraphics::Mesh* mesh)
 {
 	return mesh->vertex_buffer.get();
-}
-
-void oval_load_scene(oval_device_t* device, const char* filepath)
-{
 }
 
 HGEGraphics::Texture* oval_load_texture(oval_device_t* device, const char* filepath, bool mipmap)

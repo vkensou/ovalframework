@@ -4,6 +4,7 @@
 #include "taskflow/algorithm/for_each.hpp"
 #include "entt/entt.hpp"
 #include <bit>
+#include "tiny_gltf.h"
 
 struct BindBuffer
 {
@@ -243,6 +244,22 @@ struct Application
 	}
 };
 
+void load_scene(Application& app, const char* filepath)
+{
+	using namespace tinygltf;
+	Model model;
+	TinyGLTF loader;
+	std::string err;
+	std::string warn;
+	bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, filepath);
+	if (!warn.empty())
+		printf("Warn: %s\n", warn.c_str());
+	if (!err.empty())
+		printf("Err: %s\n", err.c_str());
+	if (!ret)
+		printf("Failed to parse: %s\n", filepath);
+}
+
 void _init_resource(Application& app)
 {
 	auto sphere = oval_load_mesh(app.device, "media/models/Sphere.obj");
@@ -299,6 +316,8 @@ void _init_resource(Application& app)
 	};
 	material->bindBuffer<MaterialData>(1, 0, materialData);
 	app.materials.push_back(material);
+
+	load_scene(app, "media/gltf/Cube.gltf");
 }
 
 void _free_resource(Application& app)

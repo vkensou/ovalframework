@@ -2,7 +2,6 @@
 
 #include "ktx.h"
 
-#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 static bool endsWithKtx(const char* str) {

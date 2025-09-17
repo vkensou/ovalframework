@@ -1,6 +1,5 @@
 #include "cgpu_device.h"
 
-#define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
 #include "SDL_rwops.h"
