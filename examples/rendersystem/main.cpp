@@ -4,6 +4,10 @@
 #include "taskflow/algorithm/for_each.hpp"
 #include "entt/entt.hpp"
 #include <bit>
+#include <filesystem>
+#define TINYGLTF_NO_STB_IMAGE
+#define TINYGLTF_NO_STB_IMAGE_WRITE
+#define TINYGLTF_NO_EXTERNAL_IMAGE
 #include "tiny_gltf.h"
 
 struct BindBuffer
@@ -226,7 +230,6 @@ struct Application
 	oval_device_t* device{ nullptr };
 	entt::registry registry;
 	std::vector<HGEGraphics::Mesh*> meshes;
-	std::vector<HGEGraphics::Shader*> shaders;
 	CGPUSamplerId texture_sampler = CGPU_NULLPTR;
 	HGEGraphics::Texture* color_map{ nullptr };
 	std::vector<HGEGraphics::Material*> materials;
@@ -244,36 +247,410 @@ struct Application
 	}
 };
 
-void load_scene(Application& app, const char* filepath)
+inline ECGPUFilterType find_min_filter(int min_filter)
+{
+	switch (min_filter)
+	{
+	case TINYGLTF_TEXTURE_FILTER_NEAREST:
+	case TINYGLTF_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST:
+	case TINYGLTF_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
+		return CGPU_FILTER_TYPE_NEAREST;
+	case TINYGLTF_TEXTURE_FILTER_LINEAR:
+	case TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST:
+	case TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR:
+		return CGPU_FILTER_TYPE_LINEAR;
+	default:
+		return CGPU_FILTER_TYPE_LINEAR;
+	}
+};
+
+inline ECGPUMipMapMode find_mipmap_mode(int min_filter)
+{
+	switch (min_filter)
+	{
+	case TINYGLTF_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST:
+	case TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST:
+		return CGPU_MIP_MAP_MODE_NEAREST;
+	case TINYGLTF_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
+	case TINYGLTF_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR:
+		return CGPU_MIP_MAP_MODE_LINEAR;
+	default:
+		return CGPU_MIP_MAP_MODE_LINEAR;
+	}
+};
+
+inline ECGPUFilterType find_mag_filter(int mag_filter)
+{
+	switch (mag_filter)
+	{
+	case TINYGLTF_TEXTURE_FILTER_NEAREST:
+		return CGPU_FILTER_TYPE_NEAREST;
+	case TINYGLTF_TEXTURE_FILTER_LINEAR:
+		return CGPU_FILTER_TYPE_LINEAR;
+	default:
+		return CGPU_FILTER_TYPE_LINEAR;
+	}
+};
+
+inline ECGPUAddressMode find_wrap_mode(int wrap)
+{
+	switch (wrap)
+	{
+	case TINYGLTF_TEXTURE_WRAP_REPEAT:
+		return CGPU_ADDRESS_MODE_REPEAT;
+	case TINYGLTF_TEXTURE_WRAP_CLAMP_TO_EDGE:
+		return CGPU_ADDRESS_MODE_CLAMP_TO_EDGE;
+	case TINYGLTF_TEXTURE_WRAP_MIRRORED_REPEAT:
+		return CGPU_ADDRESS_MODE_MIRROR;
+	default:
+		return CGPU_ADDRESS_MODE_REPEAT;
+	}
+};
+
+struct TexturedVertex
+{
+	HMM_Vec3 position;
+	HMM_Vec3 normal;
+	HMM_Vec2 texCoord;
+};
+
+HGEGraphics::Texture* load_texture(Application& app, tinygltf::Image& gltf_image, std::string path, bool mipmap)
+{
+	return oval_load_texture(app.device, (path + gltf_image.uri).c_str(), true);
+
+	mipmap = false;
+	auto mipLevels = mipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(gltf_image.width, gltf_image.height)))) + 1 : 1;
+	CGPUTextureDescriptor texture_desc =
+	{
+		.name = nullptr,
+		.width = (uint64_t)gltf_image.width,
+		.height = (uint64_t)gltf_image.height,
+		.depth = 1,
+		.array_size = 1,
+		.format = CGPU_TEXTURE_FORMAT_R8G8B8A8_SRGB,
+		.mip_levels = mipLevels,
+		.descriptors = ECGPUResourceTypeFlags(mipmap ? CGPU_RESOURCE_TYPE_TEXTURE | CGPU_RESOURCE_TYPE_RENDER_TARGET : CGPU_RESOURCE_TYPE_TEXTURE),
+	};
+
+	auto texture = oval_create_texture_from_buffer(app.device, texture_desc, gltf_image.image.data(), gltf_image.image.size());
+	return texture;
+}
+
+HGEGraphics::Mesh* load_primitive(Application& app, const tinygltf::Primitive& gltf_primitive, const tinygltf::Model& model, bool right_hand)
+{
+	int rh = right_hand ? -1 : 1;
+
+	std::vector<HMM_Vec3> positions;
+	std::vector<HMM_Vec3> normals;
+	std::vector<HMM_Vec2> texcoords;
+	for (auto& attribute : gltf_primitive.attributes)
+	{
+		auto& accessor = model.accessors[attribute.second];
+		auto& bufferView = model.bufferViews[accessor.bufferView];
+		auto& buffer = model.buffers[bufferView.buffer];
+		auto stride = accessor.ByteStride(bufferView);
+		auto startByte = accessor.byteOffset + bufferView.byteOffset;
+		auto endByte = startByte + accessor.count * stride;
+	
+		if (attribute.first == "NORMAL")
+		{
+			normals.resize(accessor.count);
+			memcpy(normals.data(), (buffer.data.data() + startByte), accessor.count * stride);
+		}
+		else if (attribute.first == "POSITION")
+		{
+			positions.resize(accessor.count);
+			memcpy(positions.data(), (buffer.data.data() + startByte), accessor.count * stride);
+		}
+		else if (attribute.first == "TEXCOORD_0")
+		{
+			texcoords.resize(accessor.count);
+			memcpy(texcoords.data(), (buffer.data.data() + startByte), accessor.count * stride);
+		}
+	}
+	
+	std::vector<TexturedVertex> vertices{ positions.size() };
+	for (size_t i = 0; i < vertices.size(); ++i)
+	{
+		HMM_Vec3 position = i < positions.size() ? positions[i] : HMM_V3_Zero;
+		position.X *= rh;
+		HMM_Vec3 normal = i < normals.size() ? normals[i] : HMM_V3_Up;
+		normal.X *= rh;
+		HMM_Vec2 texcoord = i < texcoords.size() ? texcoords[i] : HMM_V2(0, 0);
+		vertices[i] = { position, normal, texcoord };
+	}
+	
+	CGPUVertexAttribute mesh_vertex_attributes[3] =
+	{
+		{ "POSITION", 1, CGPU_VERTEX_FORMAT_FLOAT32X3, 0, 0, sizeof(float) * 3, CGPU_VERTEX_INPUT_RATE_VERTEX },
+		{ "NORMAL", 1, CGPU_VERTEX_FORMAT_FLOAT32X3, 0, sizeof(float) * 3, sizeof(float) * 3, CGPU_VERTEX_INPUT_RATE_VERTEX },
+		{ "TEXCOORD", 1, CGPU_VERTEX_FORMAT_FLOAT32X2, 0, sizeof(float) * 6, sizeof(float) * 2, CGPU_VERTEX_INPUT_RATE_VERTEX },
+	};
+	
+	CGPUVertexLayout mesh_vertex_layout =
+	{
+		.attribute_count = 3,
+		.p_attributes = mesh_vertex_attributes,
+	};
+	
+	int indexCount = 0;
+	int indexStride = 0;
+	std::vector<uint32_t> indices32;
+	std::vector<uint16_t> indices16;
+	if (gltf_primitive.indices >= 0)
+	{
+		auto& accessor = model.accessors[gltf_primitive.indices];
+		auto& bufferView = model.bufferViews[accessor.bufferView];
+		auto& buffer = model.buffers[bufferView.buffer];
+		auto stride = accessor.ByteStride(bufferView);
+		auto startByte = accessor.byteOffset + bufferView.byteOffset;
+		auto endByte = startByte + accessor.count * stride;
+	
+		indexCount = accessor.count;
+		const uint8_t* indexData = buffer.data.data() + startByte;
+		if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
+		{
+			indexStride = 2;
+			indices16.resize(accessor.count);
+			memcpy(indices16.data(), indexData, accessor.count * stride);
+			if (right_hand)
+			{
+				for (size_t j = 0; j < indices16.size() / 3; ++j)
+				{
+					auto temp = indices16.at(j * 3 + 0);
+					indices16.at(j * 3 + 0) = indices16.at(j * 3 + 2);
+					indices16.at(j * 3 + 2) = temp;
+				}
+			}
+		}
+		else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_INT)
+		{
+			indexStride = 4;
+			indices32.resize(accessor.count);
+			memcpy(indices32.data(), indexData, accessor.count * stride);
+			if (right_hand)
+			{
+				for (size_t j = 0; j < indices32.size() / 3; ++j)
+				{
+					auto temp = indices32.at(j * 3 + 0);
+					indices32.at(j * 3 + 0) = indices32.at(j * 3 + 2);
+					indices32.at(j * 3 + 2) = temp;
+				}
+			}
+		}
+	}
+	
+	return oval_create_mesh_from_buffer(app.device, vertices.size(), indexCount, CGPU_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh_vertex_layout, indexStride, (const uint8_t *)vertices.data(), indexStride == 2 ? (const uint8_t*)indices16.data() : (const uint8_t*)indices32.data(), false, false);
+}
+
+void set_children_transform(entt::registry& registry, const std::vector<std::vector<entt::entity>>& entities, const std::vector<tinygltf::Node>& nodes, const tinygltf::Node& node, int index, std::vector<bool>& transed, const HMM_Mat4& parent_transform)
+{
+	if (transed[index]) return;
+
+	transed[index] = true;
+	auto& entity = entities[index];
+	for (size_t j = 0; j < entity.size(); ++j)
+	{
+		auto& matrix = registry.get<Matrix>(entity[j]);
+		matrix.model = parent_transform * matrix.model;
+	}
+	HMM_Mat4 self_transform = entity.size() > 0 ? registry.get<Matrix>(entity[0]).model : parent_transform;
+	for (size_t j = 0; j < node.children.size(); ++j)
+	{
+		set_children_transform(registry, entities, nodes, nodes[node.children[j]], node.children[j], transed, self_transform);
+	}
+}
+
+void load_scene(Application& app, const char* filepath, HGEGraphics::Shader* shader)
 {
 	using namespace tinygltf;
 	Model model;
 	TinyGLTF loader;
 	std::string err;
 	std::string warn;
+	std::filesystem::path path = filepath;
+	path.remove_filename();
 	bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, filepath);
 	if (!warn.empty())
 		printf("Warn: %s\n", warn.c_str());
 	if (!err.empty())
 		printf("Err: %s\n", err.c_str());
 	if (!ret)
+	{
 		printf("Failed to parse: %s\n", filepath);
+		return;
+	}
+
+	std::vector<CGPUSamplerId> samplers;
+	for (size_t i = 0; i < model.samplers.size(); ++i)
+	{
+		auto& gltf_sampler = model.samplers[i];
+
+		ECGPUFilterType minFilter = find_min_filter(gltf_sampler.minFilter);
+		ECGPUFilterType magFilter = find_mag_filter(gltf_sampler.magFilter);
+		ECGPUMipMapMode mipmapMode = find_mipmap_mode(gltf_sampler.minFilter);
+		ECGPUAddressMode address_u = find_wrap_mode(gltf_sampler.wrapS);
+		ECGPUAddressMode address_v = find_wrap_mode(gltf_sampler.wrapT);
+		ECGPUAddressMode address_w = CGPU_ADDRESS_MODE_REPEAT;
+
+		CGPUSamplerDescriptor texture_sampler_desc = {
+			.min_filter = minFilter,
+			.mag_filter = magFilter,
+			.mipmap_mode = mipmapMode,
+			.address_u = address_u,
+			.address_v = address_v,
+			.address_w = address_w,
+			.mip_lod_bias = 0,
+			.max_anisotropy = 1,
+		};
+		auto sampler = oval_create_sampler(app.device, &texture_sampler_desc);
+		samplers.push_back(sampler);
+	}
+
+	std::vector<HGEGraphics::Texture*> textures;
+	for (size_t i = 0; i < model.images.size(); ++i)
+	{
+		auto& gltf_image = model.images[i];
+		auto texture = load_texture(app, gltf_image, path.string(), true);
+		textures.push_back(texture);
+	}
+
+	for (size_t i = 0; i < model.materials.size(); ++i)
+	{
+		auto& gltf_material = model.materials[i];
+		auto material = oval_create_material(app.device, shader);
+		auto& baseColorTexture = gltf_material.pbrMetallicRoughness.baseColorTexture;
+		if (baseColorTexture.index != -1)
+		{
+			auto& gltf_texture = model.textures[baseColorTexture.index];
+			auto tex = textures[gltf_texture.source];
+			material->bindTexture(1, 1, tex);
+			material->bindSampler(1, 2, samplers[0]);
+		}
+
+		float roughness = gltf_material.pbrMetallicRoughness.roughnessFactor;
+		float a2 = roughness * roughness;
+		a2 = std::clamp(a2, 0.0001f, 0.999f);
+		float shininess = 2 / a2 - 2;
+		float specularLevel = 1 / (a2 * 3.14159265359f);
+		auto materialData = MaterialData{
+			.shininess = HMM_V4(shininess, specularLevel, 0, 0),
+			.albedo = HMM_V4(gltf_material.pbrMetallicRoughness.baseColorFactor[0], 
+				gltf_material.pbrMetallicRoughness.baseColorFactor[0], 
+				gltf_material.pbrMetallicRoughness.baseColorFactor[0], 
+				gltf_material.pbrMetallicRoughness.baseColorFactor[0]),
+		};
+		material->bindBuffer<MaterialData>(1, 0, materialData);
+		app.materials.push_back(material);
+	}
+
+	struct TupleHasher {
+		std::size_t operator()(const std::tuple<int, int>& key) const {
+			// 使用标准库的哈希函数组合两个整数的哈希值
+			auto h1 = std::hash<int>{}(std::get<0>(key));
+			auto h2 = std::hash<int>{}(std::get<1>(key));
+
+			// 常见的组合方式：异或或移位组合
+			return h1 ^ (h2 << 1);
+		}
+	};
+
+	std::unordered_map<std::tuple<int, int>, int, TupleHasher> meshes;
+	for (size_t i = 0; i < model.meshes.size(); ++i)
+	{
+		auto& gltf_mesh = model.meshes[i];
+		for (size_t j = 0; j < gltf_mesh.primitives.size(); ++j)
+		{
+			meshes.insert({ std::make_tuple<int, int>(i, j), app.meshes.size() });
+			app.meshes.push_back(load_primitive(app, gltf_mesh.primitives[j], model, true));
+		}
+	}
+
+	auto& registry = app.registry;
+
+	std::vector<std::vector<entt::entity>> entities;
+	for (size_t i = 0; i < model.nodes.size(); ++i)
+	{
+		auto& node = model.nodes[i];
+
+		HMM_Mat4 matrix = HMM_M4_Identity;
+		if (node.matrix.size() == 16)
+		{
+			matrix.Elements[0][0] = node.matrix[0];
+			matrix.Elements[0][1] = node.matrix[1];
+			matrix.Elements[0][2] = node.matrix[2];
+			matrix.Elements[0][3] = node.matrix[3];
+
+			matrix.Elements[1][0] = node.matrix[4];
+			matrix.Elements[1][1] = node.matrix[5];
+			matrix.Elements[1][2] = node.matrix[6];
+			matrix.Elements[1][3] = node.matrix[7];
+
+			matrix.Elements[2][0] = node.matrix[8];
+			matrix.Elements[2][1] = node.matrix[9];
+			matrix.Elements[2][2] = node.matrix[10];
+			matrix.Elements[2][3] = node.matrix[11];
+
+			matrix.Elements[3][0] = node.matrix[12];
+			matrix.Elements[3][1] = node.matrix[13];
+			matrix.Elements[3][2] = node.matrix[14];
+			matrix.Elements[3][3] = node.matrix[15];
+		}
+		else
+		{
+			HMM_Vec3 translate = HMM_V3_Zero;
+			HMM_Quat rot = HMM_Q_Identity;
+			HMM_Vec3 scale = HMM_V3_One;
+			if (node.translation.size() == 3)
+				translate = HMM_V3(node.translation[0], node.translation[1], node.translation[2]);
+			if (node.rotation.size() == 4)
+				rot = HMM_Q(node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]);
+			if (node.scale.size() == 3)
+				scale = HMM_V3(node.scale[0], node.scale[1], node.scale[2]);
+			matrix = HMM_TRS(translate, rot, scale);
+		}
+
+		std::vector<entt::entity> subEntities;
+		if (node.mesh != -1)
+		{
+			const auto& mesh = model.meshes[node.mesh];
+			for (size_t j = 0; j < mesh.primitives.size(); ++j)
+			{
+				auto e1 = registry.create();
+				registry.emplace<Matrix>(e1, matrix);
+				registry.emplace<Rendable>(e1, mesh.primitives[j].material, meshes[std::tuple<int, int>(node.mesh, j)]);
+				registry.emplace<ShowMatrix>(e1, HMM_M4_Identity);
+				subEntities.push_back(e1);
+			}
+		}
+		else
+		{
+			auto e1 = registry.create();
+			registry.emplace<Matrix>(e1, matrix);
+			subEntities.push_back(e1);
+		}
+		entities.push_back(std::move(subEntities));
+	}
+
+	std::vector<bool> transed(entities.size());
+	std::fill(transed.begin(), transed.end(), false);
+	for (size_t i = 0; i < model.nodes.size(); ++i)
+	{
+		set_children_transform(registry, entities, model.nodes, model.nodes[i], i, transed, HMM_M4_Identity);
+	}
 }
 
 void _init_resource(Application& app)
 {
-	auto sphere = oval_load_mesh(app.device, "media/models/Sphere.obj");
-	app.meshes.push_back(sphere);
-
 	CGPUBlendAttachmentState blend_attachments = {
-	.enable = false,
-	.src_factor = CGPU_BLEND_FACTOR_ONE,
-	.dst_factor = CGPU_BLEND_FACTOR_ZERO,
-	.src_alpha_factor = CGPU_BLEND_FACTOR_ONE,
-	.dst_alpha_factor = CGPU_BLEND_FACTOR_ZERO,
-	.blend_op = CGPU_BLEND_OP_ADD,
-	.blend_alpha_op = CGPU_BLEND_OP_ADD,
-	.color_mask = CGPU_COLOR_MASK_RGBA,
+		.enable = false,
+		.src_factor = CGPU_BLEND_FACTOR_ONE,
+		.dst_factor = CGPU_BLEND_FACTOR_ZERO,
+		.src_alpha_factor = CGPU_BLEND_FACTOR_ONE,
+		.dst_alpha_factor = CGPU_BLEND_FACTOR_ZERO,
+		.blend_op = CGPU_BLEND_OP_ADD,
+		.blend_alpha_op = CGPU_BLEND_OP_ADD,
+		.color_mask = CGPU_COLOR_MASK_RGBA,
 	};
 	CGPUBlendStateDescriptor blend_desc = {
 		.attachment_count = 1,
@@ -289,9 +666,9 @@ void _init_resource(Application& app)
 	};
 	CGPURasterizerStateDescriptor rasterizer_state = {
 		.cull_mode = CGPU_CULL_MODE_BACK,
+		.front_face	= CGPU_FRONT_FACE_CLOCK_WISE,
 	};
 	auto shader = oval_create_shader(app.device, "shaderbin/obj2.vert.spv", "shaderbin/obj2.frag.spv", blend_desc, depth_desc, rasterizer_state);
-	app.shaders.push_back(shader);
 
 	CGPUSamplerDescriptor texture_sampler_desc = {
 		.min_filter = CGPU_FILTER_TYPE_LINEAR,
@@ -307,17 +684,7 @@ void _init_resource(Application& app)
 
 	app.color_map = oval_load_texture(app.device, "media/textures/tex.jpg", true);
 
-	auto material = oval_create_material(app.device, app.shaders[0]);
-	material->bindTexture(1, 1, app.color_map);
-	material->bindSampler(1, 2, app.texture_sampler);
-	auto materialData = MaterialData{
-		.shininess = HMM_V4(90, 0, 0, 0),
-		.albedo = HMM_V4(1, 1, 1, 1),
-	};
-	material->bindBuffer<MaterialData>(1, 0, materialData);
-	app.materials.push_back(material);
-
-	load_scene(app, "media/gltf/Cube.gltf");
+	load_scene(app, "media/gltf/gltf-truck/CesiumMilkTruck.gltf", shader);
 }
 
 void _free_resource(Application& app)
@@ -330,36 +697,10 @@ void _free_resource(Application& app)
 void _init_world(Application& app)
 {
 	auto& registry = app.registry;
-	auto e1 = registry.create();
-	registry.emplace<Rotation>(e1, HMM_Q_Identity);
-	registry.emplace<Matrix>(e1, HMM_M4_Identity);
-	registry.emplace<Rotate>(e1, HMM_V3(1.0f, 0.0f, 0.0f), 1.0f, HMM_Q_Identity);
-	registry.emplace<Rendable>(e1, 0, 0);
-	registry.emplace<RotateInterpolation>(e1, HMM_Q_Identity);
-	registry.emplace<ShowMatrix>(e1, HMM_M4_Identity);
-
-	auto e2 = registry.create();
-	registry.emplace<Position>(e2, HMM_V3_Zero);
-	registry.emplace<Matrix>(e2, HMM_M4_Identity);
-	registry.emplace<SimpleHarmonic>(e2, HMM_V3(1.5f, 0.0f, 0.0f), 1.0f, HMM_V3(0.0f, 0.0f, 0.0f));
-	registry.emplace<Rendable>(e2, 0, 0);
-	registry.emplace<MoveInterpolation>(e2);
-	registry.emplace<ShowMatrix>(e2, HMM_M4_Identity);
-
-	auto e3 = registry.create();
-	registry.emplace<Position>(e3, HMM_V3_Zero);
-	registry.emplace<Rotation>(e3, HMM_Q_Identity);
-	registry.emplace<Matrix>(e3, HMM_M4_Identity);
-	registry.emplace<Rotate>(e3, HMM_V3(1.0f, 0.0f, 0.0f), 0.5f, HMM_Q_Identity);
-	registry.emplace<SimpleHarmonic>(e3, HMM_V3(0.0f, 1.5f, 0.0f), 2.0f, HMM_V3(0.0f, 0.0f, 0.0f));
-	registry.emplace<Rendable>(e3, 0, 0);
-	registry.emplace<RotateInterpolation>(e3, HMM_Q_Identity);
-	registry.emplace<MoveInterpolation>(e3);
-	registry.emplace<ShowMatrix>(e3, HMM_M4_Identity);
 
 	auto cam = registry.create();
 	auto cameraParentMat = HMM_QToM4(HMM_QFromEuler_YXZ(HMM_AngleDeg(33.4), HMM_AngleDeg(45), 0));
-	auto cameraLocalMat = HMM_Translate(HMM_V3(0, 0, -5));
+	auto cameraLocalMat = HMM_Translate(HMM_V3(0, 0, -10));
 	auto cameraWMat = HMM_Mul(cameraParentMat, cameraLocalMat);
 	registry.emplace<Matrix>(cam, cameraWMat);
 	registry.emplace<Camera>(cam, 45.0f, 0.1f, 20.f, app.device->descriptor.width, app.device->descriptor.height);
