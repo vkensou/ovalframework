@@ -89,6 +89,16 @@ std::tuple<std::pmr::vector<TexturedVertex>*, std::pmr::vector<uint32_t>*> LoadO
 			}
 		}
 
+		if (right_hand)
+		{
+			for (size_t j = 0; j < indices->size() / 3; ++j)
+			{
+				auto temp = indices->at(j * 3 + 1);
+				indices->at(j * 3 + 1) = indices->at(j * 3 + 2);
+				indices->at(j * 3 + 2) = temp;
+			}
+		}
+
 		break;
 	}
 
