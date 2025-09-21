@@ -9,6 +9,147 @@
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #define TINYGLTF_NO_EXTERNAL_IMAGE
 #include "tiny_gltf.h"
+#include <cassert>
+
+struct Tree
+{
+	entt::entity parent{ entt::null };
+	entt::entity firstChild{ entt::null };
+	entt::entity lastChild{ entt::null };
+	entt::entity previousSibling{ entt::null };
+	entt::entity nextSibling{ entt::null };
+};
+
+inline Tree& safeGetTree(entt::registry& registry, entt::entity self)
+{
+	return registry.get_or_emplace<Tree>(self);
+}
+
+void removeFromParent(entt::registry& registry, entt::entity self, Tree& selfTree);
+
+void insertBefore(entt::registry& registry, entt::entity self, Tree& selfTree, entt::entity newNode, entt::entity referenceNode)
+{
+	assert(newNode != entt::null && "newNode is null");
+
+	auto& newTree = registry.get<Tree>(newNode);
+	removeFromParent(registry, newNode, newTree);
+
+	if (referenceNode != entt::null)
+	{
+		auto& referenceTree = registry.get<Tree>(referenceNode);
+		assert(referenceTree.parent == self);
+
+		newTree.previousSibling = referenceTree.previousSibling;
+		newTree.nextSibling = referenceNode;
+
+		if (newTree.previousSibling == entt::null)
+			selfTree.firstChild = newNode;
+		else 
+		{
+			auto& previousTree = registry.get<Tree>(newTree.previousSibling);
+			previousTree.nextSibling = newNode;
+		}
+	}
+	else
+	{
+		if (selfTree.lastChild != entt::null)
+		{
+			auto& lastTree = registry.get<Tree>(selfTree.lastChild);
+			assert(lastTree.nextSibling == entt::null);
+			lastTree.nextSibling = newNode;
+			newTree.previousSibling = selfTree.lastChild;
+			selfTree.lastChild = newNode;
+		}
+		else
+		{
+			assert(selfTree.firstChild == entt::null);
+			assert(selfTree.lastChild == entt::null);
+			selfTree.firstChild = newNode;
+			selfTree.lastChild = newNode;
+		}
+	}
+	newTree.parent = self;
+}
+
+void appendChild(entt::registry& registry, entt::entity self, Tree& selfTree, entt::entity child)
+{
+	assert(child != entt::null && "child is null");
+	assert(child != self && "child is self");
+
+	auto& childTree = registry.get<Tree>(child);
+	removeFromParent(registry, child, childTree);
+	childTree.parent = self;
+	if (selfTree.lastChild != entt::null)
+	{
+		auto& lastChildTree = registry.get<Tree>(selfTree.lastChild);
+		assert(lastChildTree.nextSibling == entt::null);
+		childTree.previousSibling = selfTree.lastChild;
+		lastChildTree.nextSibling = child;
+	}
+	else
+	{
+		assert(selfTree.firstChild == entt::null);
+		selfTree.firstChild = child;
+	}
+
+	selfTree.lastChild = child;
+}
+
+void replaceChild(entt::registry& registry, entt::entity self, Tree& selfTree, entt::entity newChild, entt::entity oldChild)
+{
+	assert(newChild != entt::null && "newChild is null");
+	assert(oldChild != entt::null && "oldChild is null");
+	assert(newChild != self);
+	auto& oldChildTree = registry.get<Tree>(oldChild);
+	assert(oldChildTree.parent == self);
+	const auto oldChildNext = oldChildTree.nextSibling;
+	removeFromParent(registry, oldChild, oldChildTree);
+	insertBefore(registry, self, selfTree, newChild, oldChildNext);
+}
+
+void removeChild(entt::registry& registry, entt::entity self, Tree& selfTree, entt::entity child)
+{
+	assert(child != entt::null && "child is null");
+	auto& childTree = registry.get<Tree>(child);
+	assert(childTree.parent == self);
+	removeFromParent(registry, child, childTree);
+}
+
+void removeFromParent(entt::registry& registry, entt::entity self, Tree& selfTree)
+{
+	if (selfTree.parent == entt::null) return;
+
+	auto& parentTree = registry.get<Tree>(selfTree.parent);
+
+	if (parentTree.firstChild == self)
+		parentTree.firstChild = selfTree.nextSibling;
+	if (parentTree.lastChild == self)
+		parentTree.lastChild = selfTree.previousSibling;
+
+	if (selfTree.previousSibling != entt::null)
+	{
+		auto& previousTree = registry.get<Tree>(selfTree.previousSibling);
+		previousTree.nextSibling = selfTree.nextSibling;
+	}
+
+	if (selfTree.nextSibling != entt::null)
+	{
+		auto& nextTree = registry.get<Tree>(selfTree.nextSibling);
+		nextTree.previousSibling = selfTree.previousSibling;
+	}
+
+	selfTree.parent = entt::null;
+	selfTree.previousSibling = entt::null;
+	selfTree.nextSibling = entt::null;
+}
+
+void setParent(entt::registry& registry, entt::entity self, entt::entity newParent)
+{
+	auto& selfTree = safeGetTree(registry, self);
+	removeFromParent(registry, self, selfTree);
+	auto& parentTree = safeGetTree(registry, newParent);
+	appendChild(registry, newParent, parentTree, self);
+}
 
 struct BindBuffer
 {
@@ -65,9 +206,14 @@ struct RotateInterpolation
 	HMM_Quat value;
 };
 
-struct Matrix
+struct LocalTransform
 {
-	HMM_Mat4 model;
+	HMM_Mat4 model{ HMM_M4_Identity };
+};
+
+struct WorldTransform
+{
+	HMM_Mat4 value{ HMM_M4_Identity };
 };
 
 struct ShowMatrix
@@ -153,19 +299,57 @@ void doRotation(const SystemContext& context, const Rotate& rotate, Rotation& ro
 	rotation.value = rotate.base * HMM_QFromAxisAngle_LH(rotate.axis, context.time_since_startup * rotate.speed);
 }
 
-void updateMatrixPositionOnly(const SystemContext& context, const Position& position, Matrix& matrix)
+void updateMatrixPositionOnly(const SystemContext& context, const Position& position, LocalTransform& matrix)
 {
 	matrix.model = HMM_Translate(position.value);
 }
 
-void updateMatrixRotationOnly(const SystemContext& context, const Rotation& rotation, Matrix& matrix)
+void updateMatrixRotationOnly(const SystemContext& context, const Rotation& rotation, LocalTransform& matrix)
 {
 	matrix.model = HMM_QToM4(rotation.value);
 }
 
-void updateMatrixPositionAndRotation(const SystemContext& context, const Position& position, const Rotation& rotation, Matrix& matrix)
+void updateMatrixPositionAndRotation(const SystemContext& context, const Position& position, const Rotation& rotation, LocalTransform& matrix)
 {
 	matrix.model = HMM_TRS(position.value, rotation.value, HMM_V3_One);
+}
+
+void updateTreeTransform(entt::registry& registry, entt::entity entity, const Tree& entityTree, HMM_Mat4 parentTransform)
+{
+	auto local = registry.try_get<LocalTransform>(entity);
+	auto world = registry.try_get<WorldTransform>(entity);
+	HMM_Mat4 selfWorldTransform;
+	if (world && local)
+	{
+		selfWorldTransform = world->value = parentTransform * local->model;
+	}
+	else if (world)
+	{
+		selfWorldTransform = world->value = parentTransform;
+	}
+	else
+	{
+		selfWorldTransform = parentTransform;
+	}
+
+	entt::entity child = entityTree.firstChild;
+	while (child != entt::null)
+	{
+		auto& childTree = registry.get<Tree>(child);
+		updateTreeTransform(registry, child, childTree, selfWorldTransform);
+		child = childTree.nextSibling;
+	}
+}
+
+void updateHierarchyTransform(const SystemContext& context, entt::registry& registry, entt::entity entity, const Tree& entityTree)
+{
+	if (entityTree.parent != entt::null) return;
+	updateTreeTransform(registry, entity, entityTree, HMM_M4_Identity);
+}
+
+void updateNonHierarchyTrasform(const SystemContext& context, const LocalTransform& local, WorldTransform& world)
+{
+	world.value = local.model;
 }
 
 void updateMoveInterpolation(const SystemContext& context, const SimpleHarmonic& simpleHarmonic, MoveInterpolation& moveInterp)
@@ -182,28 +366,28 @@ void updateRotateInterpolation(const SystemContext& context, const Rotate& rotat
 	rotateInterp.value = HMM_MulQ(HMM_InvQ(rot2), rot1);
 }
 
-void updateShowMatrixStatic(const SystemContext& context, const Matrix& matrix, ShowMatrix& showMatrix)
+void updateShowMatrixStatic(const SystemContext& context, const WorldTransform& matrix, ShowMatrix& showMatrix)
 {
-	showMatrix.model = matrix.model;
+	showMatrix.model = matrix.value;
 }
 
-void updateShowMatrixMoveOnly(const SystemContext& context, const Matrix& matrix, const MoveInterpolation& moveInterp, ShowMatrix& showMatrix)
+void updateShowMatrixMoveOnly(const SystemContext& context, const WorldTransform& matrix, const MoveInterpolation& moveInterp, ShowMatrix& showMatrix)
 {
-	showMatrix.model = HMM_MulM4(matrix.model, HMM_Translate(moveInterp.value));
+	showMatrix.model = HMM_MulM4(matrix.value, HMM_Translate(moveInterp.value));
 }
 
-void updateShowMatrixRotateOnly(const SystemContext& context, const Matrix& matrix, const RotateInterpolation& rotateInterp, ShowMatrix& showMatrix)
+void updateShowMatrixRotateOnly(const SystemContext& context, const WorldTransform& matrix, const RotateInterpolation& rotateInterp, ShowMatrix& showMatrix)
 {
-	auto oriPosition = HMM_M4GetTranslate(matrix.model);
-	auto oriRotation = HMM_M4ToQ_LH(matrix.model);
+	auto oriPosition = HMM_M4GetTranslate(matrix.value);
+	auto oriRotation = HMM_M4ToQ_LH(matrix.value);
 	auto newRotation = HMM_MulQ(oriRotation, rotateInterp.value);
 	showMatrix.model = HMM_TRS(oriPosition, newRotation, HMM_V3_One);
 }
 
-void updateShowMatrixMoveAndRotate(const SystemContext& context, const Matrix& matrix, const MoveInterpolation& moveInterp, const RotateInterpolation& rotateInterp, ShowMatrix& showMatrix)
+void updateShowMatrixMoveAndRotate(const SystemContext& context, const WorldTransform& matrix, const MoveInterpolation& moveInterp, const RotateInterpolation& rotateInterp, ShowMatrix& showMatrix)
 {
-	auto oriPosition = HMM_M4GetTranslate(matrix.model);
-	auto oriRotation = HMM_M4ToQ_LH(matrix.model);
+	auto oriPosition = HMM_M4GetTranslate(matrix.value);
+	auto oriRotation = HMM_M4ToQ_LH(matrix.value);
 	auto newPosition = oriPosition + moveInterp.value;
 	auto newRotation = HMM_MulQ(oriRotation, rotateInterp.value);
 	showMatrix.model = HMM_TRS(newPosition, newRotation, HMM_V3_One);
@@ -443,24 +627,6 @@ HGEGraphics::Mesh* load_primitive(Application& app, const tinygltf::Primitive& g
 	return oval_create_mesh_from_buffer(app.device, vertices.size(), indexCount, CGPU_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh_vertex_layout, indexStride, (const uint8_t *)vertices.data(), indexStride == 2 ? (const uint8_t*)indices16.data() : (const uint8_t*)indices32.data(), false, false);
 }
 
-void set_children_transform(entt::registry& registry, const std::vector<std::vector<entt::entity>>& entities, const std::vector<tinygltf::Node>& nodes, const tinygltf::Node& node, int index, std::vector<bool>& transed, const HMM_Mat4& parent_transform)
-{
-	if (transed[index]) return;
-
-	transed[index] = true;
-	auto& entity = entities[index];
-	for (size_t j = 0; j < entity.size(); ++j)
-	{
-		auto& matrix = registry.get<Matrix>(entity[j]);
-		matrix.model = parent_transform * matrix.model;
-	}
-	HMM_Mat4 self_transform = entity.size() > 0 ? registry.get<Matrix>(entity[0]).model : parent_transform;
-	for (size_t j = 0; j < node.children.size(); ++j)
-	{
-		set_children_transform(registry, entities, nodes, nodes[node.children[j]], node.children[j], transed, self_transform);
-	}
-}
-
 void load_scene(Application& app, const char* filepath, HGEGraphics::Shader* shader)
 {
 	using namespace tinygltf;
@@ -568,7 +734,7 @@ void load_scene(Application& app, const char* filepath, HGEGraphics::Shader* sha
 
 	auto& registry = app.registry;
 
-	std::vector<std::vector<entt::entity>> entities;
+	std::vector<entt::entity> entities;
 	for (size_t i = 0; i < model.nodes.size(); ++i)
 	{
 		auto& node = model.nodes[i];
@@ -610,34 +776,39 @@ void load_scene(Application& app, const char* filepath, HGEGraphics::Shader* sha
 			matrix = HMM_TRS(translate, rot, scale);
 		}
 
-		std::vector<entt::entity> subEntities;
+		auto ent = registry.create();
+		registry.emplace<LocalTransform>(ent, matrix);
+		registry.emplace<WorldTransform>(ent);
 		if (node.mesh != -1)
 		{
 			const auto& mesh = model.meshes[node.mesh];
 			for (size_t j = 0; j < mesh.primitives.size(); ++j)
 			{
-				auto e1 = registry.create();
-				registry.emplace<Matrix>(e1, matrix);
-				registry.emplace<Rendable>(e1, mesh.primitives[j].material, meshes[std::tuple<int, int>(node.mesh, j)]);
-				registry.emplace<ShowMatrix>(e1, HMM_M4_Identity);
-				subEntities.push_back(e1);
+				auto sub = registry.create();
+				registry.emplace<WorldTransform>(sub, HMM_M4_Identity);
+				registry.emplace<Rendable>(sub, mesh.primitives[j].material, meshes[std::tuple<int, int>(node.mesh, j)]);
+				registry.emplace<ShowMatrix>(sub, HMM_M4_Identity);
+				setParent(registry, sub, ent);
 			}
 		}
-		else
-		{
-			auto e1 = registry.create();
-			registry.emplace<Matrix>(e1, matrix);
-			subEntities.push_back(e1);
-		}
-		entities.push_back(std::move(subEntities));
+		entities.push_back(ent);
 	}
 
 	std::vector<bool> transed(entities.size());
 	std::fill(transed.begin(), transed.end(), false);
 	for (size_t i = 0; i < model.nodes.size(); ++i)
 	{
-		set_children_transform(registry, entities, model.nodes, model.nodes[i], i, transed, HMM_M4_Identity);
+		auto& node = model.nodes[i];
+
+		for (size_t j = 0; j < node.children.size(); ++j)
+		{
+			auto& child = model.nodes[node.children[j]];
+			setParent(registry, entities[node.children[j]], entities[i]);
+		}
 	}
+
+	registry.emplace<Rotation>(entities[0], HMM_Q_Identity);
+	registry.emplace<Rotate>(entities[0], HMM_V3_Up, 1.0f, HMM_Q_Identity);
 }
 
 void _init_resource(Application& app)
@@ -702,13 +873,13 @@ void _init_world(Application& app)
 	auto cameraParentMat = HMM_QToM4(HMM_QFromEuler_YXZ(HMM_AngleDeg(33.4), HMM_AngleDeg(45), 0));
 	auto cameraLocalMat = HMM_Translate(HMM_V3(0, 0, -10));
 	auto cameraWMat = HMM_Mul(cameraParentMat, cameraLocalMat);
-	registry.emplace<Matrix>(cam, cameraWMat);
+	registry.emplace<WorldTransform>(cam, cameraWMat);
 	registry.emplace<Camera>(cam, 45.0f, 0.1f, 20.f, app.device->descriptor.width, app.device->descriptor.height);
 
 	auto light = registry.create();
 	auto lightDir = HMM_Norm(HMM_V3(0.25f, -0.7f, 1.25f));
 	auto lightMat = HMM_PoseAt_LH(HMM_V3_Zero, lightDir, HMM_V3_Up);
-	registry.emplace<Matrix>(light, lightMat);
+	registry.emplace<WorldTransform>(light, lightMat);
 	registry.emplace<Light>(light, HMM_V4(1.0f, 1.0f, 1.0f, 1.0f));
 }
 
@@ -739,6 +910,18 @@ tf::Task createForeachTask(const SystemContext& context, entt::registry& registr
 }
 
 template<typename...T, typename Func>
+tf::Task createForeachTask2(const SystemContext& context, entt::registry& registry, tf::Taskflow& taskFlow, Func&& func)
+{
+	return taskFlow.emplace([&registry, context, func = std::forward<Func>(func)](tf::Subflow& subflow) {
+		auto view = registry.view<T...>();
+		for (auto entity : view)
+		{
+			auto args = std::tuple_cat(std::forward_as_tuple(context), std::forward_as_tuple(registry), std::forward_as_tuple(entity), view.get(entity));
+			std::apply(func, std::move(args));
+		}});
+}
+
+template<typename...T, typename Func>
 void updateSystem(const SystemContext& context, entt::registry& registry, Func&& func)
 {
 	auto view = registry.view<T...>();
@@ -766,17 +949,25 @@ tf::Task simulate(Application& app, const oval_update_context& update_context, t
 	SystemContext context = SystemContext{ update_context.delta_time, update_context.time_since_startup, update_context.delta_time_double, update_context.time_since_startup_double, 0, 0 };
 	auto simpleHarmonicMoveSystem = createForeachTask<const SimpleHarmonic, Position>(context, registry, flow, doSimpleHarmonicMove).name("简谐运动");
 	auto rotationSystem = createForeachTask<const Rotate, Rotation>(context, registry, flow, doRotation).name("旋转运动");
-	auto updateMatrixPositionOnlySystem = createForeachTask<const Position, Matrix>(context, registry, flow, updateMatrixPositionOnly, entt::exclude<Rotation>).name("更新矩阵PositionOnly");
-	auto updateMatrixRotationOnlySystem = createForeachTask<const Rotation, Matrix>(context, registry, flow, updateMatrixRotationOnly, entt::exclude<Position>).name("更新矩阵RotationOnly");
-	auto updateMatrixPositionAndRotationSystem = createForeachTask<const Position, const Rotation, Matrix>(context, registry, flow, updateMatrixPositionAndRotation).name("更新矩阵PositionAndRotation");
 
 	auto beforeUpdateMatrix = flow.placeholder();
 	beforeUpdateMatrix
-		.succeed(simpleHarmonicMoveSystem, rotationSystem)
-		.precede(updateMatrixPositionOnlySystem, updateMatrixRotationOnlySystem, updateMatrixPositionAndRotationSystem);
+		.succeed(simpleHarmonicMoveSystem, rotationSystem);;
+
+	auto updateMatrixPositionOnlySystem = createForeachTask<const Position, LocalTransform>(context, registry, flow, updateMatrixPositionOnly, entt::exclude<Rotation>).name("更新矩阵PositionOnly");
+	auto updateMatrixRotationOnlySystem = createForeachTask<const Rotation, LocalTransform>(context, registry, flow, updateMatrixRotationOnly, entt::exclude<Position>).name("更新矩阵RotationOnly");
+	auto updateMatrixPositionAndRotationSystem = createForeachTask<const Position, const Rotation, LocalTransform>(context, registry, flow, updateMatrixPositionAndRotation).name("更新矩阵PositionAndRotation");
+	auto beforeUpdateLocalTransformSystemGroup = flow.placeholder().precede(updateMatrixPositionOnlySystem, updateMatrixRotationOnlySystem, updateMatrixPositionAndRotationSystem);
+	auto afterUpdateLocalTransformSystemGroup = flow.placeholder().succeed(updateMatrixPositionOnlySystem, updateMatrixRotationOnlySystem, updateMatrixPositionAndRotationSystem);
+	beforeUpdateLocalTransformSystemGroup.succeed(beforeUpdateMatrix);
+
+	auto updateHierarchyTransformSystem = createForeachTask2<const Tree>(context, registry, flow, updateHierarchyTransform);
+	auto updateNonHierarchyTransformSystem = createForeachTask<const LocalTransform, WorldTransform>(context, registry, flow, updateNonHierarchyTrasform, entt::exclude<Tree>).name("更新非层级WorldTransform");
+	auto beforeUpdateHierarchyTransformSystemGroup = flow.placeholder().precede(updateHierarchyTransformSystem, updateNonHierarchyTransformSystem).succeed(afterUpdateLocalTransformSystemGroup);
+	auto afterUpdateHierarchyTransformSystemGroup = flow.placeholder().succeed(updateHierarchyTransformSystem, updateNonHierarchyTransformSystem);
 
 	auto endOfSimulate = flow.placeholder();
-	endOfSimulate.succeed(updateMatrixPositionOnlySystem, updateMatrixRotationOnlySystem, updateMatrixPositionAndRotationSystem);
+	endOfSimulate.succeed(afterUpdateHierarchyTransformSystemGroup);
 
 	return endOfSimulate;
 }
@@ -823,10 +1014,10 @@ void interpolate(Application& app, const oval_render_context& render_context)
 	SystemContext context = SystemContext{ render_context.delta_time, render_context.time_since_startup, render_context.delta_time_double, render_context.time_since_startup_double, render_context.render_interpolation_time, render_context.render_interpolation_time_double };
 	updateSystem<const SimpleHarmonic, MoveInterpolation>(context, registry, updateMoveInterpolation);
 	updateSystem<const Rotate, RotateInterpolation>(context, registry, updateRotateInterpolation);
-	updateSystem<const Matrix, ShowMatrix>(context, registry, updateShowMatrixStatic, entt::exclude<MoveInterpolation, RotateInterpolation>);
-	updateSystem<const Matrix, const MoveInterpolation, ShowMatrix>(context, registry, updateShowMatrixMoveOnly, entt::exclude<RotateInterpolation>);
-	updateSystem<const Matrix, const RotateInterpolation, ShowMatrix>(context, registry, updateShowMatrixRotateOnly, entt::exclude<MoveInterpolation>);
-	updateSystem<const Matrix, const MoveInterpolation, const RotateInterpolation, ShowMatrix>(context, registry, updateShowMatrixMoveAndRotate);
+	updateSystem<const WorldTransform, ShowMatrix>(context, registry, updateShowMatrixStatic, entt::exclude<MoveInterpolation, RotateInterpolation>);
+	updateSystem<const WorldTransform, const MoveInterpolation, ShowMatrix>(context, registry, updateShowMatrixMoveOnly, entt::exclude<RotateInterpolation>);
+	updateSystem<const WorldTransform, const RotateInterpolation, ShowMatrix>(context, registry, updateShowMatrixRotateOnly, entt::exclude<MoveInterpolation>);
+	updateSystem<const WorldTransform, const MoveInterpolation, const RotateInterpolation, ShowMatrix>(context, registry, updateShowMatrixMoveAndRotate);
 }
 
 void enumViews(Application& app, FrameRenderPacket& currentFramePack)
@@ -835,19 +1026,19 @@ void enumViews(Application& app, FrameRenderPacket& currentFramePack)
 
 	auto lightDir = HMM_Norm(HMM_V3(0, -1, 0));
 
-	auto light_view = registry.view<Light, const Matrix>();
-	for (auto [entity, light, matrix] : light_view.each())
+	auto light_view = registry.view<Light, const WorldTransform>();
+	for (auto [entity, light, transform] : light_view.each())
 	{
-		auto forward = HMM_M4GetForward(matrix.model);
+		auto forward = HMM_M4GetForward(transform.value);
 		lightDir = forward;
 		break;
 	}
 
 	currentFramePack.clear();
-	auto camera_view = registry.view<Camera, const Matrix>();
-	for (auto [entity, camera, matrix] : camera_view.each())
+	auto camera_view = registry.view<Camera, const WorldTransform>();
+	for (auto [entity, camera, transform] : camera_view.each())
 	{
-		auto cameraMat = matrix.model;
+		auto cameraMat = transform.value;
 
 		auto eye = HMM_M4GetTranslate(cameraMat);
 		auto forward = HMM_M4GetForward(cameraMat);
