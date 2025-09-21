@@ -383,7 +383,7 @@ HGEGraphics::Mesh* setupImGuiResourcesMesh(oval_cgpu_device_t* device, HGEGraphi
 					const ImDrawList* cmd_list = drawData->CmdLists[n];
 					upload(encoder, offset, cmd_list->VtxBuffer.Size * sizeof(ImDrawVert), cmd_list->VtxBuffer.Data);
 
-					offset += cmd_list->VtxBuffer.Size;
+					offset += cmd_list->VtxBuffer.Size * sizeof(ImDrawVert);
 				}
 			}, sizeof(PassData), (void**)&update_vertex_passdata);
 		update_vertex_passdata->drawData = drawData;
@@ -400,7 +400,7 @@ HGEGraphics::Mesh* setupImGuiResourcesMesh(oval_cgpu_device_t* device, HGEGraphi
 					const ImDrawList* cmd_list = drawData->CmdLists[n];
 					upload(encoder, offset, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx), cmd_list->IdxBuffer.Data);
 
-					offset += cmd_list->IdxBuffer.Size;
+					offset += cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx);
 				}
 			}, sizeof(PassData), (void**)&update_index_passdata);
 		update_index_passdata->drawData = drawData;
