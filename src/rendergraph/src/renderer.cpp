@@ -340,6 +340,16 @@ namespace HGEGraphics
 		texture.states_consistent = false;
 	}
 
+	void set_viewport(RenderPassEncoder* encoder, float x, float y, float width, float height, float min_depth, float max_depth)
+	{
+		cgpu_render_pass_encoder_set_viewport(encoder->encoder, x, y, width, height, min_depth, max_depth);
+	}
+
+	void set_scissor(RenderPassEncoder* encoder, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+	{
+		cgpu_render_pass_encoder_set_scissor(encoder->encoder, x, y, width, height);
+	}
+
 	void push_constants(RenderPassEncoder* encoder, Shader* shader, const char* name, const void* data)
 	{
 		cgpu_render_pass_encoder_push_constants(encoder->encoder, shader->root_sig, name, data);

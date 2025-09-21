@@ -16,6 +16,8 @@ namespace HGEGraphics
 	struct Buffer;
 	struct Material;
 
+	void set_viewport(RenderPassEncoder* encoder, float x, float y, float width, float height, float min_depth, float max_depth);
+	void set_scissor(RenderPassEncoder* encoder, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 	void push_constants(RenderPassEncoder* encoder, Shader* shader, const char* name, const void* data);
 	void draw(RenderPassEncoder* encoder, Shader* shader, Mesh* mesh);
 	void draw_submesh(RenderPassEncoder* encoder, Shader* shader, Mesh* mesh, uint32_t index_count, uint32_t first_index, uint32_t vertex_count, uint32_t first_vertex);
