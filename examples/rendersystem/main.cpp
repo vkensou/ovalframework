@@ -10,6 +10,7 @@
 #define TINYGLTF_NO_EXTERNAL_IMAGE
 #include "tiny_gltf.h"
 #include <cassert>
+#include "imgui_entt_entity_editor.hpp"
 
 struct Tree
 {
@@ -419,6 +420,8 @@ struct Application
 	std::vector<HGEGraphics::Material*> materials;
 	std::pmr::synchronized_pool_resource root_memory_resource;
 	std::array<FrameRenderPacket, 2> frameRenderPackets;
+	MM::EntityEditor<entt::entity> enttEditor;
+	entt::entity editorCurEntity;
 
 	Application()
 		: frameRenderPackets{ FrameRenderPacket{&root_memory_resource}, FrameRenderPacket{&root_memory_resource} }
@@ -428,8 +431,50 @@ struct Application
 		frameRenderPackets[0].memory_resource->deallocate(buffer, 1024 * 1024, 8);
 		buffer = frameRenderPackets[1].memory_resource->allocate(1024 * 1024, 8);
 		frameRenderPackets[1].memory_resource->deallocate(buffer, 1024 * 1024, 8);
+
+		enttEditor.registerComponent<Tree>("Tree");
+		enttEditor.registerComponent<WorldTransform>("World Transform");
 	}
 };
+
+namespace MM {
+	template <>
+	void ComponentEditorWidget<Tree>(entt::registry& reg, entt::registry::entity_type e)
+	{
+		auto& t = reg.get<Tree>(e);
+		ImGui::Text("parent: %d", t.parent);
+		ImGui::Text("first child: %d", t.firstChild);
+		ImGui::Text("last child: %d", t.lastChild);
+		ImGui::Text("previous sibling: %d", t.previousSibling);
+		ImGui::Text("next sibling: %d", t.nextSibling);
+	}
+
+	template <>
+	void ComponentEditorWidget<WorldTransform>(entt::registry& reg, entt::registry::entity_type e)
+	{
+		auto& v = reg.get<WorldTransform>(e);
+		
+		ImGui::DragFloat("00", &v.value.Elements[0][0], 0.1f);
+		ImGui::DragFloat("01", &v.value.Elements[0][1], 0.1f);
+		ImGui::DragFloat("02", &v.value.Elements[0][2], 0.1f);
+		ImGui::DragFloat("03", &v.value.Elements[0][3], 0.1f);
+
+		ImGui::DragFloat("10", &v.value.Elements[1][0], 0.1f);
+		ImGui::DragFloat("11", &v.value.Elements[1][1], 0.1f);
+		ImGui::DragFloat("12", &v.value.Elements[1][2], 0.1f);
+		ImGui::DragFloat("13", &v.value.Elements[1][3], 0.1f);
+
+		ImGui::DragFloat("20", &v.value.Elements[2][0], 0.1f);
+		ImGui::DragFloat("21", &v.value.Elements[2][1], 0.1f);
+		ImGui::DragFloat("22", &v.value.Elements[2][2], 0.1f);
+		ImGui::DragFloat("23", &v.value.Elements[2][3], 0.1f);
+
+		ImGui::DragFloat("30", &v.value.Elements[3][0], 0.1f);
+		ImGui::DragFloat("31", &v.value.Elements[3][1], 0.1f);
+		ImGui::DragFloat("32", &v.value.Elements[3][2], 0.1f);
+		ImGui::DragFloat("33", &v.value.Elements[3][3], 0.1f);
+	}
+}
 
 inline ECGPUFilterType find_min_filter(int min_filter)
 {
@@ -1174,6 +1219,9 @@ void on_imgui(oval_device_t* device, oval_render_context render_context)
 		}
 		ImGui::Text("Total Time: %7.2f us", total_duration);
 	}
+
+	Application* app = (Application*)device->descriptor.userdata;
+	app->enttEditor.renderSimpleCombo(app->registry, app->editorCurEntity);
 }
 
 void on_submit(oval_device_t* device, oval_submit_context submit_context, HGEGraphics::rendergraph_t& rg, HGEGraphics::texture_handle_t rg_back_buffer)
