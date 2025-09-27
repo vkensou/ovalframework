@@ -8,9 +8,11 @@
 #define TINYGLTF_NO_STB_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #define TINYGLTF_NO_EXTERNAL_IMAGE
+#define TINYGLTF_NO_FS
 #include "tiny_gltf.h"
 #include <cassert>
 #include "imgui_entt_entity_editor.hpp"
+#include "SDL.h"
 
 struct Tree
 {
@@ -672,6 +674,68 @@ HGEGraphics::Mesh* load_primitive(Application& app, const tinygltf::Primitive& g
 	return oval_create_mesh_from_buffer(app.device, vertices.size(), indexCount, CGPU_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh_vertex_layout, indexStride, (const uint8_t *)vertices.data(), indexStride == 2 ? (const uint8_t*)indices16.data() : (const uint8_t*)indices32.data(), false, false);
 }
 
+bool FileExists(const std::string& abs_filename, void* user_data)
+{
+	SDL_RWops* rw = SDL_RWFromFile(abs_filename.c_str(), "rb");
+	if (!rw)
+	{
+		return false;
+	}
+	SDL_RWclose(rw);
+	return true;
+}
+
+std::string ExpandFilePath(const std::string& filepath, void*)
+{
+	return filepath;
+}
+
+bool ReadWholeFile(std::vector<unsigned char>* out, std::string* err,
+	const std::string& filepath, void*)
+{
+	SDL_RWops* rw = SDL_RWFromFile(filepath.c_str(), "rb");
+	if (!rw)
+	{
+		return false;
+	}
+
+	auto size = SDL_RWsize(rw);
+
+	out->resize(size);
+	SDL_RWread(rw, out->data(), sizeof(char), size);
+	SDL_RWclose(rw);
+	return true;
+}
+
+bool WriteWholeFile(std::string* err, const std::string& filepath,
+	const std::vector<unsigned char>& contents, void*)
+{
+	SDL_RWops* rw = SDL_RWFromFile(filepath.c_str(), "rb");
+	if (!rw)
+	{
+		return false;
+	}
+
+	SDL_RWwrite(rw, contents.data(), contents.size(), 1);
+	SDL_RWclose(rw);
+	return true;
+}
+
+bool GetFileSizeInBytes(size_t* filesize_out, std::string* err,
+	const std::string& filepath, void*)
+{
+	SDL_RWops* rw = SDL_RWFromFile(filepath.c_str(), "rb");
+	if (!rw)
+	{
+		return false;
+	}
+
+	(*filesize_out) = SDL_RWsize(rw);
+	//SDL_RWwrite(rw, contents.data(), contents.size(), 1);
+	SDL_RWclose(rw);
+	return true;
+}
+
 void load_scene(Application& app, const char* filepath, HGEGraphics::Shader* shader)
 {
 	using namespace tinygltf;
@@ -679,6 +743,19 @@ void load_scene(Application& app, const char* filepath, HGEGraphics::Shader* sha
 	TinyGLTF loader;
 	std::string err;
 	std::string warn;
+
+	FsCallbacks tiny_gltfFsCallback = {
+		.FileExists = FileExists,
+		.ExpandFilePath = ExpandFilePath,
+		.ReadWholeFile = ReadWholeFile,
+		.WriteWholeFile = WriteWholeFile,
+		.GetFileSizeInBytes = GetFileSizeInBytes,
+	};
+	if (!loader.SetFsCallbacks(tiny_gltfFsCallback, &err))
+	{
+		printf("Err: %s\n", err.c_str());
+	}
+
 	std::filesystem::path path = filepath;
 	path.remove_filename();
 	bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, filepath);
@@ -919,7 +996,7 @@ void _init_world(Application& app)
 	auto cameraLocalMat = HMM_Translate(HMM_V3(0, 0, -10));
 	auto cameraWMat = HMM_Mul(cameraParentMat, cameraLocalMat);
 	registry.emplace<WorldTransform>(cam, cameraWMat);
-	registry.emplace<Camera>(cam, 45.0f, 0.1f, 20.f, app.device->descriptor.width, app.device->descriptor.height);
+	registry.emplace<Camera>(cam, 45.0f, 0.1f, 20.f, app.device->width, app.device->height);
 
 	auto light = registry.create();
 	auto lightDir = HMM_Norm(HMM_V3(0.25f, -0.7f, 1.25f));
