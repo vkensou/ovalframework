@@ -72,8 +72,8 @@ float4 frag(VSOutput input) : SV_TARGET
     // Specular lighting
     float3  viewDir     = normalize(passData.viewPos.xyz - input.WorldPos.xyz);
     float3  halfVec     = normalize(viewDir + lightVec);
-    float   NdotH       = dot(normal, halfVec);
-    float3  specular    = (float3)pow(max(0.0, NdotH), materialData.shininess.x);
+    float NdotH = dot(normal, halfVec);
+    float3 specular = (float3)pow(max(0.0, NdotH), materialData.shininess.x) * materialData.shininess.y;
 
 	float4 color = colorMap.Sample(colorMapSampler, input.UV0);
 	return float4(lerp(1, color.rgb, materialData.albedo.a) * (diffuse + specular), 1);

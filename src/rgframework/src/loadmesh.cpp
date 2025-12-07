@@ -1,6 +1,5 @@
 #include "cgpu_device.h"
 
-#define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
 #include "SDL_rwops.h"
@@ -87,6 +86,16 @@ std::tuple<std::pmr::vector<TexturedVertex>*, std::pmr::vector<uint32_t>*> LoadO
 				auto iter = vertex_map.insert({ vertex_map_index , vertices->size() });
 				vertices->push_back({ pos, normal, texcoord });
 				indices->push_back(iter.first->second);
+			}
+		}
+
+		if (right_hand)
+		{
+			for (size_t j = 0; j < indices->size() / 3; ++j)
+			{
+				auto temp = indices->at(j * 3 + 1);
+				indices->at(j * 3 + 1) = indices->at(j * 3 + 2);
+				indices->at(j * 3 + 2) = temp;
 			}
 		}
 

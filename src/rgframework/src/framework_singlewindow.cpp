@@ -383,7 +383,7 @@ HGEGraphics::Mesh* setupImGuiResourcesMesh(oval_cgpu_device_t* device, HGEGraphi
 					const ImDrawList* cmd_list = drawData->CmdLists[n];
 					upload(encoder, offset, cmd_list->VtxBuffer.Size * sizeof(ImDrawVert), cmd_list->VtxBuffer.Data);
 
-					offset += cmd_list->VtxBuffer.Size;
+					offset += cmd_list->VtxBuffer.Size * sizeof(ImDrawVert);
 				}
 			}, sizeof(PassData), (void**)&update_vertex_passdata);
 		update_vertex_passdata->drawData = drawData;
@@ -400,7 +400,7 @@ HGEGraphics::Mesh* setupImGuiResourcesMesh(oval_cgpu_device_t* device, HGEGraphi
 					const ImDrawList* cmd_list = drawData->CmdLists[n];
 					upload(encoder, offset, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx), cmd_list->IdxBuffer.Data);
 
-					offset += cmd_list->IdxBuffer.Size;
+					offset += cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx);
 				}
 			}, sizeof(PassData), (void**)&update_index_passdata);
 		update_index_passdata->drawData = drawData;
@@ -432,12 +432,23 @@ void renderImgui(oval_cgpu_device_t* device, HGEGraphics::rendergraph_t& rg, HGE
 			{
 				oval_cgpu_device_t* device = *(oval_cgpu_device_t**)passdata;
 
+				auto drawData = device->imgui_draw_data;
+				int fb_width = (int)(drawData->DisplaySize.x * drawData->FramebufferScale.x);
+				int fb_height = (int)(drawData->DisplaySize.y * drawData->FramebufferScale.y);
+				if (fb_width <= 0 || fb_height <= 0)
+					return;
+
+				set_viewport(encoder,
+					0.0f, 0.0f,
+					(float)fb_width, (float)fb_height,
+					0.f, 1.f);
+
 				float scale[2];
-				scale[0] = 2.0f / device->imgui_draw_data->DisplaySize.x;
-				scale[1] = -2.0f / device->imgui_draw_data->DisplaySize.y;
+				scale[0] = 2.0f / drawData->DisplaySize.x;
+				scale[1] = -2.0f / drawData->DisplaySize.y;
 				float translate[2];
-				translate[0] = -1.0f - device->imgui_draw_data->DisplayPos.x * scale[0];
-				translate[1] = +1.0f - device->imgui_draw_data->DisplayPos.y * scale[1];
+				translate[0] = -1.0f - drawData->DisplayPos.x * scale[0];
+				translate[1] = +1.0f - drawData->DisplayPos.y * scale[1];
 				struct ConstantData
 				{
 					float scale[2];
@@ -452,7 +463,9 @@ void renderImgui(oval_cgpu_device_t* device, HGEGraphics::rendergraph_t& rg, HGE
 				set_global_texture(encoder, device->imgui_font_texture, 0, 0);
 				set_global_sampler(encoder, device->imgui_font_sampler, 0, 1);
 
-				auto drawData = device->imgui_draw_data;
+				ImVec2 clip_off = drawData->DisplayPos;         // (0,0) unless using multi-viewports
+				ImVec2 clip_scale = drawData->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+
 				int global_vtx_offset = 0;
 				int global_idx_offset = 0;
 				for (size_t i = 0; i < drawData->CmdListsCount; ++i)
@@ -461,6 +474,21 @@ void renderImgui(oval_cgpu_device_t* device, HGEGraphics::rendergraph_t& rg, HGE
 					for (size_t j = 0; j < cmdList->CmdBuffer.size(); ++j)
 					{
 						const auto cmdBuffer = &cmdList->CmdBuffer[j];
+
+						ImVec2 clip_min((cmdBuffer->ClipRect.x - clip_off.x)* clip_scale.x, (cmdBuffer->ClipRect.y - clip_off.y)* clip_scale.y);
+						ImVec2 clip_max((cmdBuffer->ClipRect.z - clip_off.x)* clip_scale.x, (cmdBuffer->ClipRect.w - clip_off.y)* clip_scale.y);
+
+						// Clamp to viewport as vkCmdSetScissor() won't accept values that are off bounds
+						if (clip_min.x < 0.0f) { clip_min.x = 0.0f; }
+						if (clip_min.y < 0.0f) { clip_min.y = 0.0f; }
+						if (clip_max.x > fb_width) { clip_max.x = (float)fb_width; }
+						if (clip_max.y > fb_height) { clip_max.y = (float)fb_height; }
+						if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
+							continue;
+
+						// Apply scissor/clipping rectangle
+						set_scissor(encoder, (clip_min.x), (clip_min.y), (clip_max.x - clip_min.x), (clip_max.y - clip_min.y));
+
 						draw_submesh(encoder, device->imgui_shader, device->imgui_mesh, cmdBuffer->ElemCount, cmdBuffer->IdxOffset + global_idx_offset, 0, cmdBuffer->VtxOffset + global_vtx_offset);
 					}
 					global_idx_offset += cmdList->IdxBuffer.Size;
