@@ -1,11 +1,11 @@
 #include "framework.h"
 
-#include <SDL_syswm.h>
+#include <SDL3/SDL.h>
 #include "cgpu/api.h"
 #include "rendergraph.h"
 #include "rendergraph_compiler.h"
 #include "rendergraph_executor.h"
-#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdl3.h"
 #include <string.h>
 #include "cgpu_device.h"
 #include "mimalloc.h"
@@ -14,6 +14,7 @@
 #ifdef __ANDROID__
 #include "jni.h"
 #endif
+#include <SDL3/SDL_main.h>
 
 void oval_log(void* user_data, ECGPULogSeverity severity, const char* fmt, ...)
 {
@@ -78,17 +79,24 @@ void oval_free_aligned(void* user_data, void* ptr, const void* pool)
 
 oval_device_t* oval_create_device(const oval_device_descriptor* device_descriptor)
 {
-	SDL_SetHint(SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "1");
-	SDL_LogSetAllPriority(SDL_LOG_PRIORITY_VERBOSE);
+	SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
 	
-	if (SDL_Init(0) < 0)
+	if (!SDL_Init(0))
 		return nullptr;
 
-	uint32_t windowFlag = SDL_WINDOW_SHOWN;
-#ifdef __ANDROID__
-	windowFlag |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-#endif
-	SDL_Window* window = SDL_CreateWindow("oval", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, device_descriptor->width, device_descriptor->height, windowFlag);
+	SDL_PropertiesID props = SDL_CreateProperties();
+	SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "oval");
+	SDL_SetFloatProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED);
+	SDL_SetFloatProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED);
+	SDL_SetFloatProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, device_descriptor->width);
+	SDL_SetFloatProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, device_descriptor->height);
+	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
+	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_EXTERNAL_GRAPHICS_CONTEXT_BOOLEAN, true);
+
+	SDL_Window* window = SDL_CreateWindowWithProperties(props);
+
+	SDL_DestroyProperties(props);
+
 	if (window == nullptr)
 	{
 		SDL_Quit();
@@ -163,12 +171,11 @@ oval_device_t* oval_create_device(const oval_device_descriptor* device_descripto
 	device_cgpu->gfx_queue = cgpu_device_get_queue(device_cgpu->device, CGPU_QUEUE_TYPE_GRAPHICS, 0);
 	device_cgpu->present_queue = device_cgpu->gfx_queue;
 	free(adapters);
-	SDL_SysWMinfo wmInfo;
-	SDL_VERSION(&wmInfo.version);
-	SDL_GetWindowWMInfo(window, &wmInfo);
+	auto window_props = SDL_GetWindowProperties(window);
 	void* native_view = nullptr;
 #ifdef _WIN32
-	native_view = wmInfo.info.win.window;
+	auto hwnd = SDL_GetPointerProperty(window_props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+	native_view = hwnd;
 #elif defined(__ANDROID__)
 	native_view = wmInfo.info.android.window;
 #endif
@@ -232,7 +239,7 @@ oval_device_t* oval_create_device(const oval_device_descriptor* device_descripto
 
 	ImGui::StyleColorsLight();
 
-	ImGui_ImplSDL2_InitForOther(window);
+	ImGui_ImplSDL3_InitForOther(window);
 	{
 		ImGuiIO& io = ImGui::GetIO();
 		unsigned char* fontPixels;
@@ -623,16 +630,16 @@ void oval_runloop(oval_device_t* device)
 	{
 		while (SDL_PollEvent(&e))
 		{
-			ImGui_ImplSDL2_ProcessEvent(&e);
-			if (e.type == SDL_QUIT)
+			ImGui_ImplSDL3_ProcessEvent(&e);
+			if (e.type == SDL_EVENT_QUIT)
 				quit = true;
-			else if (e.type == SDL_WINDOWEVENT)
+			else
 			{
 				if (e.window.windowID == SDL_GetWindowID(D->window))
 				{
-					if (e.window.event == SDL_WINDOWEVENT_CLOSE)
+					if (e.window.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
 						quit = true;
-					else if (e.window.event == SDL_WINDOWEVENT_RESIZED || e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+					else if (e.window.type == SDL_EVENT_WINDOW_RESIZED || e.window.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
 						requestResize = true;
 				}
 			}
@@ -673,7 +680,7 @@ void oval_runloop(oval_device_t* device)
 		if (drawData)
 			D->snapshot.SnapUsingSwap(drawData, ImGui::GetTime());
 
-		ImGui_ImplSDL2_NewFrame();
+		ImGui_ImplSDL3_NewFrame();
 		ImGui::NewFrame();
 
 		bool rdc_capturing = false;
@@ -837,7 +844,7 @@ void oval_free_device(oval_device_t* device)
 {
 	auto D = (oval_cgpu_device_t*)device;
 
-	ImGui_ImplSDL2_Shutdown();
+	ImGui_ImplSDL3_Shutdown();
 	ImGui::DestroyContext();
 
 	D->default_texture = nullptr;

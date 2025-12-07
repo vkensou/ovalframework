@@ -12,7 +12,7 @@
 #include "tiny_gltf.h"
 #include <cassert>
 #include "imgui_entt_entity_editor.hpp"
-#include "SDL.h"
+#include <SDL3/SDL.h>
 
 struct Tree
 {
@@ -676,12 +676,12 @@ HGEGraphics::Mesh* load_primitive(Application& app, const tinygltf::Primitive& g
 
 bool FileExists(const std::string& abs_filename, void* user_data)
 {
-	SDL_RWops* rw = SDL_RWFromFile(abs_filename.c_str(), "rb");
+	SDL_IOStream* rw = SDL_IOFromFile(abs_filename.c_str(), "rb");
 	if (!rw)
 	{
 		return false;
 	}
-	SDL_RWclose(rw);
+	SDL_CloseIO(rw);
 	return true;
 }
 
@@ -693,46 +693,46 @@ std::string ExpandFilePath(const std::string& filepath, void*)
 bool ReadWholeFile(std::vector<unsigned char>* out, std::string* err,
 	const std::string& filepath, void*)
 {
-	SDL_RWops* rw = SDL_RWFromFile(filepath.c_str(), "rb");
+	SDL_IOStream* rw = SDL_IOFromFile(filepath.c_str(), "rb");
 	if (!rw)
 	{
 		return false;
 	}
 
-	auto size = SDL_RWsize(rw);
+	auto size = SDL_GetIOSize(rw);
 
 	out->resize(size);
-	SDL_RWread(rw, out->data(), sizeof(char), size);
-	SDL_RWclose(rw);
+	SDL_ReadIO(rw, out->data(), sizeof(char) * size);
+	SDL_CloseIO(rw);
 	return true;
 }
 
 bool WriteWholeFile(std::string* err, const std::string& filepath,
 	const std::vector<unsigned char>& contents, void*)
 {
-	SDL_RWops* rw = SDL_RWFromFile(filepath.c_str(), "rb");
+	SDL_IOStream* rw = SDL_IOFromFile(filepath.c_str(), "rb");
 	if (!rw)
 	{
 		return false;
 	}
 
-	SDL_RWwrite(rw, contents.data(), contents.size(), 1);
-	SDL_RWclose(rw);
+	SDL_WriteIO(rw, contents.data(), contents.size() * 1);
+	SDL_CloseIO(rw);
 	return true;
 }
 
 bool GetFileSizeInBytes(size_t* filesize_out, std::string* err,
 	const std::string& filepath, void*)
 {
-	SDL_RWops* rw = SDL_RWFromFile(filepath.c_str(), "rb");
+	SDL_IOStream* rw = SDL_IOFromFile(filepath.c_str(), "rb");
 	if (!rw)
 	{
 		return false;
 	}
 
-	(*filesize_out) = SDL_RWsize(rw);
+	(*filesize_out) = SDL_GetIOSize(rw);
 	//SDL_RWwrite(rw, contents.data(), contents.size(), 1);
-	SDL_RWclose(rw);
+	SDL_CloseIO(rw);
 	return true;
 }
 

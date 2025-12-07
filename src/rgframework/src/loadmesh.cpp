@@ -2,7 +2,7 @@
 
 #include "tiny_obj_loader.h"
 
-#include "SDL_rwops.h"
+#include <SDL3/SDL.h>
 #include "streambuffersource.h"
 #include <istream>
 

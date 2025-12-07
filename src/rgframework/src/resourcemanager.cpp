@@ -234,17 +234,17 @@ uint8_t* oval_graphics_set_texture_data_slice(oval_device_t* device, HGEGraphics
 
 std::vector<uint8_t> readfile(const char* filename)
 {
-    SDL_RWops *rw = SDL_RWFromFile((const char*)filename, "rb");
+	SDL_IOStream*rw = SDL_IOFromFile((const char*)filename, "rb");
 	if (!rw)
 	{
 		throw std::runtime_error("failed to open file!");
 	}
 
-    auto size = SDL_RWsize(rw);
+    auto size = SDL_GetIOSize(rw);
 
     std::vector<uint8_t> buffer(size);
-    SDL_RWread(rw, buffer.data(), sizeof(char), size);
+	SDL_ReadIO(rw, buffer.data(), sizeof(char) * size);
     // don't forget to close the file
-    SDL_RWclose(rw);
+	SDL_CloseIO(rw);
 	return buffer;
 }

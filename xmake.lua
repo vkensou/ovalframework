@@ -17,8 +17,8 @@ if is_host("windows") and is_plat("android") then
     set_policy("install.strip_packagelibs", false)
 end
 
-add_requires("libsdl2 2.30.7", {configs = {sdlmain = true, shared = false}})
-add_requires("imgui v1.91.1-docking")
+add_requires("libsdl3", {configs = {sdlmain = false}})
+add_requires("imgui v1.92.1-docking")
 add_requires("mimalloc")
 
 if is_plat("windows", "linux", "android") then
@@ -45,7 +45,7 @@ target("rgframework")
     add_deps("rendergraph")
     add_deps("ktx")
     add_defines("KHRONOS_STATIC")
-    add_packages("libsdl2", {public = true})
+    add_packages("libsdl3", {public = true})
     add_packages("imgui", {public = true})
     add_packages("mimalloc", {public = true})
     add_packages("taskflow", {public = true})
