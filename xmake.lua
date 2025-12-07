@@ -20,6 +20,8 @@ end
 add_requires("libsdl3", {configs = {sdlmain = false}})
 add_requires("imgui v1.92.1-docking")
 add_requires("mimalloc")
+add_requires("entt")
+add_requires("taskflow")
 
 if is_plat("windows", "linux", "android") then
     option("use_vulkan")
@@ -49,6 +51,7 @@ target("rgframework")
     add_packages("imgui", {public = true})
     add_packages("mimalloc", {public = true})
     add_packages("taskflow", {public = true})
+    add_packages("entt", {public = true})
     add_rules("utils.hlsl2spv", {bin2c = true})
     set_pcheader("src/rgframework/src/pcheader.h")
     add_includedirs("src/rgframework/include", {public = true})
@@ -112,13 +115,9 @@ target("computeparticle")
     add_files("examples/computeparticle/*.cpp")
 target_end()
 
-add_requires("entt")
-add_requires("taskflow")
-
 target("rendersystem")
     add_rules("example_base")
     if is_plat("android") then
         add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl-2.30.7.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
     end
-    add_packages("entt")
     add_files("examples/rendersystem/*.cpp")

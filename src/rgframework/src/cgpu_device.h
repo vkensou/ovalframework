@@ -104,14 +104,24 @@ struct TexturedVertex
 	HMM_Vec2 texCoord;
 };
 
+struct oval_window_impl_t : oval_window_t {
+	SDL_Window* window;
+	CGPUSurfaceId surface;
+	CGPUSwapChainId swapchain;
+	std::vector<HGEGraphics::Backbuffer> backbuffer;
+	std::vector<CGPUSemaphoreId> swapchain_prepared_semaphores;
+	std::vector<CGPUSemaphoreId> render_finished_semaphores;
+};
+
 typedef struct oval_cgpu_device_t {
 	oval_cgpu_device_t(const oval_device_t& super, std::pmr::memory_resource* memory_resource)
-		: super(super), memory_resource(memory_resource), transfer_queue(memory_resource), allocator(memory_resource), wait_load_resources(memory_resource)
+		: super(super), windows(memory_resource), memory_resource(memory_resource), transfer_queue(memory_resource), allocator(memory_resource), wait_load_resources(memory_resource)
 	{
 	}
 
 	oval_device_t super;
 	SDL_Window* window;
+	std::pmr::vector<oval_window_impl_t*> windows;
 	std::pmr::memory_resource* memory_resource;
 	std::pmr::polymorphic_allocator<std::byte> allocator;
 	CGPUInstanceId instance;

@@ -415,6 +415,7 @@ struct FrameRenderPacket
 struct Application
 {
 	oval_device_t* device{ nullptr };
+	oval_window_t* window{ nullptr };
 	entt::registry registry;
 	std::vector<HGEGraphics::Mesh*> meshes;
 	CGPUSamplerId texture_sampler = CGPU_NULLPTR;
@@ -1332,14 +1333,25 @@ int SDL_main(int argc, char *argv[])
 		.enable_profile = false,
 	};
 	app.device = oval_create_device(&device_descriptor);
+
+	if (!app.device)
+		return -1;
+
+	oval_window_descriptor window_descriptor = {
+		.width = width,
+		.height = height,
+		.resizable = true,
+		.on_imgui = on_imgui,
+	};
+	app.window = oval_create_window(app.device, &window_descriptor);
+
 	_init_resource(app);
 	_init_world(app);
-	if (app.device)
-	{
-		oval_runloop(app.device);
-		_free_resource(app);
-		oval_free_device(app.device);
-	}
+		
+	oval_runloop(app.device);
+	_free_resource(app);
+	oval_free_window(app.device, app.window);
+	oval_free_device(app.device);
 
 	return 0;
 }

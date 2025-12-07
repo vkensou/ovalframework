@@ -76,6 +76,22 @@ typedef struct oval_device_t {
     uint16_t height;
 } oval_device_t;
 
+typedef struct oval_window_descriptor
+{
+    const char* title;
+    uint16_t width;
+    uint16_t height;
+    bool resizable;
+    oval_on_imgui on_imgui;
+} oval_window_descriptor;
+
+typedef struct oval_window_t {
+    void* userdata;
+    uint16_t width;
+    uint16_t height;
+    oval_on_imgui on_imgui;
+} oval_window_t;
+
 typedef struct oval_graphics_transfer_queue* oval_graphics_transfer_queue_t;
 
 oval_device_t* oval_create_device(const oval_device_descriptor* device_descriptor);
@@ -83,6 +99,9 @@ void oval_runloop(oval_device_t* device);
 void oval_free_device(oval_device_t* device);
 void oval_render_debug_capture(oval_device_t* device);
 void oval_query_render_profile(oval_device_t* device, uint32_t* length, const char*** names, const float** durations);
+
+oval_window_t* oval_create_window(oval_device_t* device, const oval_window_descriptor* window_descriptor);
+void oval_free_window(oval_device_t* device, oval_window_t* window);
 
 HGEGraphics::Texture* oval_create_texture(oval_device_t* device, const CGPUTextureDescriptor& desc);
 HGEGraphics::Texture* oval_create_texture_from_buffer(oval_device_t* device, const CGPUTextureDescriptor& desc, void* data, uint64_t size);
