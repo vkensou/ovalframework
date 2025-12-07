@@ -335,7 +335,7 @@ namespace HGEGraphics
 		resource.bufferType = CGPU_RESOURCE_TYPE_UNIFORM_BUFFER;
 		resource.memoryUsage = ECGPUMemoryUsage::CGPU_MEMORY_USAGE_GPU_ONLY;
 		buffer_handle_t ubo_handle = make_buffer_handle(self->resources.size() - 1);
-		rendergraph_add_uploadbufferpass_ex(self, "quick upload ubo", ubo_handle, resource.size, 0, data, nullptr, 0, nullptr);
+		rendergraph_add_uploadbufferpass_ex(self, "quick upload ubo", ubo_handle, size, 0, data, nullptr, 0, nullptr);
 		return ubo_handle;
 	}
 	texture_handle_t rendergraph_declare_texture_subresource(rendergraph_t* self, texture_handle_t parent_handle, uint8_t mipmap, uint8_t slice)
