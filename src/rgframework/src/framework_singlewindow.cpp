@@ -844,6 +844,7 @@ void oval_free_device(oval_device_t* device)
 {
 	auto D = (oval_cgpu_device_t*)device;
 
+	D->snapshot.Clear();
 	ImGui_ImplSDL3_Shutdown();
 	ImGui::DestroyContext();
 
