@@ -120,20 +120,14 @@ typedef struct oval_cgpu_device_t {
 	}
 
 	oval_device_t super;
-	SDL_Window* window;
-	std::pmr::vector<oval_window_impl_t*> windows;
+	oval_window_t* mainwindow;
+	std::pmr::vector<oval_window_t*> windows;
 	std::pmr::memory_resource* memory_resource;
 	std::pmr::polymorphic_allocator<std::byte> allocator;
 	CGPUInstanceId instance;
 	CGPUDeviceId device;
 	CGPUQueueId gfx_queue;
 	CGPUQueueId present_queue;
-
-	CGPUSurfaceId surface;
-	CGPUSwapChainId swapchain;
-	std::vector<HGEGraphics::Backbuffer> backbuffer;
-	std::vector<CGPUSemaphoreId> swapchain_prepared_semaphores;
-	std::vector<CGPUSemaphoreId> render_finished_semaphores;
 
 	std::vector<FrameData> frameDatas;
 	uint32_t current_frame_index;

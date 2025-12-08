@@ -95,6 +95,8 @@ void oval_free_window(oval_device_t* device, oval_window_t* window)
 		cgpu_instance_free_surface(D->instance, oval_window->surface);
 		oval_window->surface = CGPU_NULLPTR;
 
+		SDL_DestroyWindow(oval_window->window);
+
 		delete oval_window;
 		D->windows.erase(iter);
 	}
