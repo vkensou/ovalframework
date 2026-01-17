@@ -36,7 +36,8 @@ oval_window_t* oval_create_window(oval_device_t* device, const oval_window_descr
 	auto hwnd = SDL_GetPointerProperty(window_props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
 	native_view = hwnd;
 #elif defined(__ANDROID__)
-	native_view = wmInfo.info.android.window;
+	auto handle = SDL_GetPointerProperty(window_props, SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+	native_view = handle;
 #endif
 
 	oval_window->surface = cgpu_instance_create_surface_from_native_view(D->instance, native_view);

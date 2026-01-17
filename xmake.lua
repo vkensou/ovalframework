@@ -17,7 +17,7 @@ if is_host("windows") and is_plat("android") then
     set_policy("install.strip_packagelibs", false)
 end
 
-add_requires("libsdl3", {configs = {sdlmain = false}})
+add_requires("libsdl3", {configs = {sdlmain = false, shared = is_plat("android")}})
 add_requires("imgui v1.92.1-docking")
 add_requires("mimalloc")
 add_requires("entt")
@@ -82,35 +82,35 @@ rule("example_base")
 target("rgdemo")
     add_rules("example_base")
     if is_plat("android") then
-        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "AndroidManifest.xml", android_res = "res", android_assets = "assets", attachedjar = path.join("androidsdl", "libsdl-2.30.7.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
+        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "AndroidManifest.xml", android_res = "res", android_assets = "assets", attachedjar = path.join("androidsdl", "libsdl3-3.2.16.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
     end
     add_files("src/rgdemo/*.cpp")
 
 target("animation")
     add_rules("example_base")
     if is_plat("android") then
-        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl-2.30.7.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
+        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl3-3.2.16.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
     end
     add_files("examples/animation/*.cpp")
 
 target("hdr")
     add_rules("example_base")
     if is_plat("android") then
-        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl-2.30.7.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
+        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl3-3.2.16.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
     end
     add_files("examples/hdr/*.cpp")
 
 target("texture3d")
     add_rules("example_base")
     if is_plat("android") then
-        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl-2.30.7.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
+        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl3-3.2.16.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
     end
     add_files("examples/texture3d/*.cpp")
 
 target("computeparticle")
     add_rules("example_base")
     if is_plat("android") then
-        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl-2.30.7.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
+        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl3-3.2.16.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
     end
     add_files("examples/computeparticle/*.cpp")
 target_end()
@@ -118,6 +118,6 @@ target_end()
 target("rendersystem")
     add_rules("example_base")
     if is_plat("android") then
-        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl-2.30.7.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
+        add_rules("androidcpp", {android_sdk_version = "34", android_manifest = "examples/AndroidManifest.xml", android_res = "examples/res", android_assets = "examples/assets", attachedjar = path.join("androidsdl", "libsdl3-3.2.16.jar"), apk_output_path = ".", package_name = "com.xmake.androidcpp", activity_name = "org.libsdl.app.SDLActivity"})
     end
     add_files("examples/rendersystem/*.cpp")
