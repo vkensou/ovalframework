@@ -30,7 +30,7 @@ namespace HGEGraphics
 				&& a.binding_type != CGPU_RESOURCE_TYPE_BUFFER_RAW && a.binding_type != CGPU_RESOURCE_TYPE_RW_BUFFER
 				&& a.binding_type != CGPU_RESOURCE_TYPE_RW_BUFFER_RAW)
 				|| (a.params.buffers_params.sizes == b.params.buffers_params.sizes && a.params.buffers_params.offsets == b.params.buffers_params.offsets))
-			&& a.resources.ptrs == b.resources.ptrs && a.count && b.count;
+			&& a.resources.ptrs == b.resources.ptrs && a.count == b.count;
 	}
 
 	inline bool compare(CGPUDescriptorData a[], CGPUDescriptorData b[], size_t length)
