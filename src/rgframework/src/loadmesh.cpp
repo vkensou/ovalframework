@@ -83,7 +83,7 @@ std::tuple<std::pmr::vector<TexturedVertex>*, std::pmr::vector<uint32_t>*> LoadO
 				auto pos = coords[vertex_index];
 				auto normal = normal_index >= 0 ? normals[normal_index] : HMM_Vec3();
 				auto texcoord = texcoord_index >= 0 ? texCoords[texcoord_index] : HMM_Vec2();
-				auto iter = vertex_map.insert({ vertex_map_index , vertices->size() });
+				auto iter = vertex_map.insert({ vertex_map_index , (int)vertices->size() });
 				vertices->push_back({ pos, normal, texcoord });
 				indices->push_back(iter.first->second);
 			}

@@ -850,7 +850,7 @@ void load_scene(Application& app, const char* filepath, HGEGraphics::Shader* sha
 		auto& gltf_mesh = model.meshes[i];
 		for (size_t j = 0; j < gltf_mesh.primitives.size(); ++j)
 		{
-			meshes.insert({ std::make_tuple<int, int>(i, j), app.meshes.size() });
+			meshes.insert({ std::make_tuple<int, int>((int)i, (int)j), (int)app.meshes.size() });
 			app.meshes.push_back(load_primitive(app, gltf_mesh.primitives[j], model, true));
 		}
 	}
@@ -909,7 +909,7 @@ void load_scene(Application& app, const char* filepath, HGEGraphics::Shader* sha
 			{
 				auto sub = registry.create();
 				registry.emplace<WorldTransform>(sub, HMM_M4_Identity);
-				registry.emplace<Rendable>(sub, mesh.primitives[j].material, meshes[std::tuple<int, int>(node.mesh, j)]);
+				registry.emplace<Rendable>(sub, mesh.primitives[j].material, meshes[std::tuple<int, int>(node.mesh, (int)j)]);
 				registry.emplace<ShowMatrix>(sub, HMM_M4_Identity);
 				setParent(registry, sub, ent);
 			}
