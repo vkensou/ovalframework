@@ -68,15 +68,15 @@ namespace std
 		bool operator()(const CGPUFramebufferDescriptor& a, const CGPUFramebufferDescriptor& b) const {
 			return a.renderpass == b.renderpass && a.attachment_count == b.attachment_count
 				&& a.width == b.width && a.height == b.height && a.layers == b.layers
-				&& a.p_attachments[0] != b.p_attachments[0]
-				&& a.p_attachments[1] != b.p_attachments[1]
-				&& a.p_attachments[2] != b.p_attachments[2]
-				&& a.p_attachments[3] != b.p_attachments[3]
-				&& a.p_attachments[4] != b.p_attachments[4]
-				&& a.p_attachments[5] != b.p_attachments[5]
-				&& a.p_attachments[6] != b.p_attachments[6]
-				&& a.p_attachments[7] != b.p_attachments[7]
-				&& a.p_attachments[8] != b.p_attachments[8];
+				&& a.p_attachments[0] == b.p_attachments[0]
+				&& a.p_attachments[1] == b.p_attachments[1]
+				&& a.p_attachments[2] == b.p_attachments[2]
+				&& a.p_attachments[3] == b.p_attachments[3]
+				&& a.p_attachments[4] == b.p_attachments[4]
+				&& a.p_attachments[5] == b.p_attachments[5]
+				&& a.p_attachments[6] == b.p_attachments[6]
+				&& a.p_attachments[7] == b.p_attachments[7]
+				&& a.p_attachments[8] == b.p_attachments[8];
 		}
 	};
 
