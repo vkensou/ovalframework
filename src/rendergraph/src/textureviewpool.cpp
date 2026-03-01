@@ -19,4 +19,17 @@ namespace HGEGraphics
 		cgpu_device_free_texture_view(resource->handle->device, resource->handle);
 		allocator.delete_object(resource);
 	}
+
+	void TextureViewPool::destroyRelativeTexture(CGPUTextureId texture)
+	{
+		std::erase_if(m_resources, [this, texture](auto& kv) -> bool
+			{
+				bool relative = kv.first.texture == texture;
+				if (relative)
+				{
+					destroyResource_impl(kv.second.first);
+				}
+				return relative;
+			});
+	}
 }

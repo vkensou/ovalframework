@@ -23,6 +23,8 @@ namespace HGEGraphics
 	public:
 		TextureViewPool(TextureViewPool* upstream, std::pmr::memory_resource* const memory_resource);
 
+		void destroyRelativeTexture(CGPUTextureId texture);
+
 	protected:
 		// Í¨¹ý ResourcePool ¼Ì³Ð
 		virtual TextureView* getResource_impl(const CGPUTextureViewDescriptor& descriptor) override;

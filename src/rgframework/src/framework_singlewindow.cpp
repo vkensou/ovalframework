@@ -493,12 +493,27 @@ void render(oval_cgpu_device_t* device, const oval_submit_context& submit_contex
 	oval_graphics_transfer_queue_release_all(device);
 }
 
+void release_swapchain_related_resources(oval_cgpu_device_t* D, CGPUSwapChainId swapchain)
+{
+	for (size_t i = 0; i < D->frameDatas.size(); ++i)
+	{
+		for (size_t j = 0; j < swapchain->buffer_count; ++j)
+		{
+			auto image = swapchain->back_buffers[j];
+			D->frameDatas[i].execContext.textureViewPool.destroyRelativeTexture(image);
+		}
+	}
+}
+
 bool on_resize(oval_cgpu_device_t* D, oval_window_impl_t* window)
 {
 	window->backbuffer.clear();
 
 	if (window->swapchain)
+	{
+		release_swapchain_related_resources(D, window->swapchain);
 		cgpu_device_free_swap_chain(D->device, window->swapchain);
+	}
 	window->swapchain = CGPU_NULLPTR;
 
 	if (SDL_GetWindowFlags(window->window) & SDL_WINDOW_MINIMIZED)
