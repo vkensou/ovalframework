@@ -324,7 +324,7 @@ namespace HGEGraphics
 
 	void init_backbuffer(Backbuffer* backbuffer, CGPUSwapChainId swapchain, int index)
 	{
-		backbuffer->texture.handle = swapchain->back_buffers[index];
+		backbuffer->texture.handle = swapchain->p_back_buffers[index];
 		backbuffer->texture.view = CGPU_NULLPTR;
 		backbuffer->texture.cur_states.resize(1);
 		backbuffer->texture.cur_states[0] = CGPU_RESOURCE_STATE_UNDEFINED;
